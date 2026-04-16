@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Transaction {
+  id                 String              @id @default(cuid())
+  amount             Float
+  date               DateTime
+  description        String
+  type               TransactionType     @default(EXPENSE)
+  category           Category
+  recurringSeriesId  String?
+  recurrenceFrequency RecurrenceFrequency?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([date])
+  @@index([type])
+  @@index([category])
+  @@index([recurringSeriesId])
+}
+
+model Budget {
+  id        String   @id @default(cuid())
+  category  Category @unique
+  amount    Float
+  month     Int
+  year      Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([category, month, year])
+  @@index([month, year])
+}
+
+enum Category {
+  FOOD
+  RENT
+  TRAVEL
+  SHOPPING
+  ENTERTAINMENT
+  SALARY
+  FREELANCE
+  INVESTMENTS
+  OTHER_INCOME
+}
+
+enum RecurrenceFrequency {
+  MONTHLY
+}
+
+enum TransactionType {
+  EXPENSE
+  INCOME
+}

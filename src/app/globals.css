@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --ring: 160 84% 39%;
+  }
+  * { @apply border-slate-700; }
+  body { @apply bg-slate-950 text-slate-100; }
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.5);
+    margin-left: 0.75rem;
+  }
+}
+
+@layer utilities {
+  .animate-in { animation-duration: 200ms; animation-fill-mode: both; }
+  .fade-in-0 { --tw-enter-opacity: 0; }
+  .zoom-in-95 { --tw-enter-scale: 0.95; }
+  .slide-in-from-right-full { --tw-enter-translate-x: 100%; }
+  .slide-in-from-left-1\/2 { --tw-enter-translate-x: -50%; }
+  .slide-in-from-top-\[48\%\] { --tw-enter-translate-y: -48%; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.monthly-trend-bars .recharts-rectangle {
+  transition: fill 180ms ease, opacity 180ms ease, filter 180ms ease;
+  transform-origin: center bottom;
+}
+
+.monthly-trend-bars .recharts-bar-rectangle:hover .recharts-rectangle {
+  fill: #34d399;
+  filter: drop-shadow(0 0 10px rgba(52, 211, 153, 0.28));
+}
