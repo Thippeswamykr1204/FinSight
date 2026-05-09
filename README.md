@@ -131,25 +131,10 @@ npx prisma generate && npx prisma migrate deploy && npm run build
 - CSV import validates rows before insert and can skip duplicates
 - Recurring transaction generation is modeled explicitly in the transaction layer
 
-## Resume-Friendly Summary
+## Summary
 
 FinSight demonstrates full-stack product engineering across application architecture, backend data modeling, dashboard analytics, CSV ingestion, authentication, caching, and polished frontend workflows.
 
-Suggested one-line resume description:
+Description:
 
 > Built a full-stack personal finance productivity app with Next.js, TypeScript, Prisma, and PostgreSQL featuring recurring transactions, CSV import with duplicate detection, budgeting, dashboard analytics, and password-protected deployment.
-
-## Status
-
-FinSight is ready for:
-
-- Personal daily use
-- Portfolio/demo deployment
-- Resume and interview presentation
-
-FinSight is not yet fully optimized for:
-
-- Multi-user SaaS use
-- Per-user data isolation
-- Bank sync or production-grade financial integrations
-
