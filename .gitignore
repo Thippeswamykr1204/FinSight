@@ -15,6 +15,10 @@ build/
 .env.test.local
 .env.production.local
 
+# Local agent tooling
+.agents/
+skills-lock.json
+
 # Misc
 .DS_Store
 *.pem

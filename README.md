@@ -67,6 +67,7 @@ Create a `.env` file from `.env.example` and set:
 
 ```env
 DATABASE_URL="postgresql://postgres:password@localhost:5432/finsight"
+DIRECT_URL="postgresql://postgres:password@localhost:5432/finsight"
 REDIS_URL="redis://localhost:6379"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
 APP_PASSWORD="change-this-password"
@@ -111,6 +112,7 @@ Recommended deployment stack:
 
 ```env
 DATABASE_URL="your-production-postgres-url"
+DIRECT_URL="your-production-direct-postgres-url"
 NEXT_PUBLIC_APP_URL="https://your-app.vercel.app"
 APP_PASSWORD="your-login-password"
 AUTH_SECRET="your-long-random-secret"
@@ -120,7 +122,7 @@ REDIS_URL="your-redis-url-optional"
 ### Recommended build command
 
 ```bash
-npx prisma generate && npx prisma migrate deploy && npm run build
+npx prisma generate && npx prisma migrate deploy && next build
 ```
 
 ## Architecture Notes
