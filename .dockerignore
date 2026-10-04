@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env
+.env.*
+coverage
+test-results
+playwright-report
+.agents
+.DS_Store
+*.tsbuildinfo
+docs
+tests

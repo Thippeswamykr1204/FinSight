@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
-test("transaction lifecycle persists and recalculates the dashboard", async ({
+test("transaction lifecycle persists across reloads and exports filtered data", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -240,4 +240,45 @@ test("health works and disabled legacy endpoints fail closed", async ({
   expect(headers["content-security-policy"]).toContain(
     "frame-ancestors 'none'",
   );
+  const manifest = await request.get("/manifest.webmanifest");
+  expect((await manifest.json()).display).toBe("standalone");
+  for (const size of [192, 512]) {
+    const icon = await request.get(`/app-icons/${size}`);
+    expect(icon.status()).toBe(200);
+    expect(icon.headers()["content-type"]).toContain("image/png");
+  }
+});
+
+test("installed preview offers offline recovery without caching financial pages", async ({
+  page,
+  context,
+}) => {
+  test.skip(
+    !process.env.E2E_PRODUCTION,
+    "The service worker is intentionally production-only.",
+  );
+  await page.goto("/dashboard");
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+  const cachedUrls = await page.evaluate(async () => {
+    const names = await caches.keys();
+    const entries = await Promise.all(
+      names.map(async (name) =>
+        (await (await caches.open(name)).keys()).map((request) => request.url),
+      ),
+    );
+    return entries.flat();
+  });
+  expect(
+    cachedUrls.some(
+      (url) => url.includes("/api/") || url.includes("/dashboard"),
+    ),
+  ).toBe(false);
+  await context.setOffline(true);
+  await page.goto("/accounts");
+  await expect(
+    page.getByRole("heading", { name: "Your picture is still here." }),
+  ).toBeVisible();
 });
