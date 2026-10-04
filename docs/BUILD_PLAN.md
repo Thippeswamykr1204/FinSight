@@ -16,12 +16,12 @@ FinSight is a calm financial operating system for people who want the confidence
 
 - **Web:** Next.js 15.5.27 App Router + React 18 + TypeScript. The vulnerable v14 baseline was upgraded. Server-rendered marketing and an interactive product shell stay in one deployable unit. Turbopack is used for development after the webpack dev server produced an intermittent cold-start hydration failure.
 - **Styling:** Tailwind CSS plus CSS variables in a local design-token layer. This is faster to evolve than a third-party theme and keeps the signature visual language owned by FinSight.
-- **Data:** The verified demo uses a Zod-validated, browser-persisted ledger with integer minor-unit amounts. Prisma/PostgreSQL code is retained behind a disabled legacy API; workspace isolation and production persistence are a separate unfinished migration. The demo never silently falls back from live data to sample data.
+- **Data:** The demo uses a Zod-validated, browser-persisted ledger with integer minor-unit amounts. Hosted workspaces use a separate v2 Prisma/PostgreSQL schema with BIGINT money, tenant-scoped indexes and composite account foreign keys. The old schema remains behind a disabled legacy API; its external database has not been migrated. Hosted errors never silently fall back to sample data.
 - **Charts:** Recharts for accessible responsive charts with custom wrappers and tooltip content.
 - **Validation:** Zod at API boundaries and shared TypeScript domain types.
-- **Caching/jobs (planned):** retain Redis for the future hosted cache and rate limiter. Add durable jobs and an outbox before integrating bank webhooks or email digests; those interfaces are not implemented yet.
-- **Auth/billing/connectivity (planned):** implement provider adapters for managed auth, Stripe, bank aggregation, transactional email, and web push. Demo mode currently works without provider credentials and has no live connection to these services.
-- **Quality:** ESLint, TypeScript strict mode, Vitest domain tests with coverage thresholds, Playwright critical flows, axe accessibility checks, security headers, and health checks. Docker Compose, CI and operational documentation follow in the delivery checkpoint.
+- **Jobs/rate limits:** shared atomic PostgreSQL rate buckets and an encrypted durable email outbox with leased workers are implemented. Redis caching, bank/webhook jobs, retention cleanup and digests remain future work.
+- **Identity:** Better Auth 1.7.7 supplies verified email/password, reset, magic links, TOTP/recovery, passkeys and session controls. Google/Apple are configuration-gated and await external provider verification. SMTP is tested with Mailpit. Stripe, bank aggregation and web push remain pending.
+- **Quality:** ESLint, TypeScript strict mode, Vitest domain tests with coverage thresholds, Playwright demo/hosted flows, axe accessibility checks, security headers, and liveness checks. Standalone Docker build/run is verified; CI configuration exists but has not run on GitHub.
 
 ## Architecture
 
@@ -79,9 +79,11 @@ infra/                  Docker, CI, Terraform starter configuration
 - [x] **Phase 0 — Baseline review:** inspect the repository, record strengths/gaps, and capture the initial toolchain failure caused by missing installed dependencies.
 - [x] **Phase 1 — Foundation:** install dependencies, establish a clean design-token layer, introduce the responsive app shell, metadata, error/loading states, PWA assets, and public route structure.
 - [x] **Phase 2 — Product core:** rebuild dashboard, transactions, budgets, insights, goals, net worth, and forecast surfaces with shared persistent demo state, real CSV/OFX import/export, interactive chart ranges, filters, reduced-motion support, keyboard support, and mobile layouts. Verified in development and production-mode Chromium; 10 unit tests and 6 end-to-end tests pass. This is a working demo milestone, not a hosted SaaS launch.
-- [ ] **Phase 3 — Activation and monetization:** onboarding, local settings, planned pricing cards, import center, in-app notifications, and keyboard command palette are implemented. Remaining: authenticated workspaces, household membership/RBAC, real email/password/OAuth/magic-link/passkey/TOTP auth, sessions, Stripe checkout/portal/webhooks, trials, entitlements and usage enforcement, live bank adapters, and hosted export/deletion workflows.
-- [ ] **Phase 4 — SaaS readiness:** security headers, fail-closed legacy API gate, health endpoint, Docker/Compose definition, CI workflow and operational docs are present. Remaining: versioned hosted API, admin/audit, outbox/jobs, server export/deletion, API keys/webhooks/OpenAPI, rate limiting, observability, Terraform and deployment validation.
-- [ ] **Phase 5 — Verification and launch:** the current demo passes lint, typecheck, unit coverage, build, browser, automated accessibility and responsive checks. README, deployment/security docs, progress, launch checklist, economics, cost scenarios and roadmap are written. Full launch remains blocked on phases 3–4, live integration tests, container execution, independent security/accessibility review, capacity tests and field performance measurements.
+- [ ] **Phase 3 — Activation and monetization:** demo activation flows and hosted identity/workspace foundations are implemented. Remaining: Stripe checkout/portal/webhooks, trials, entitlements and paid usage enforcement, live OAuth/bank provider verification, and hosted deletion.
+  - [x] **3A — Hosted foundation:** separate v2 Postgres schema, verified email/password auth, recovery, magic links, confirmed TOTP, recovery codes, user-verified passkeys, session controls, workspace roles/invitations, tenant-scoped finance API/UI, cursor pagination, audit records and idempotent writes. Google/Apple adapters are configured conditionally; their external flows still require provider credentials and validation. Real local SMTP delivery uses an encrypted durable outbox.
+  - [ ] **3B — Revenue and providers:** Stripe Checkout/Portal/webhooks, entitlements, billing UI and trials; external provider test/live verification; bank adapters and hosted deletion.
+- [ ] **Phase 4 — SaaS readiness:** security headers, legacy API isolation, liveness, versioned session API, audit records, owner-authorized financial export, shared rate limits, durable email outbox, verified Docker/Compose, CI configuration and runbooks are present. Remaining: admin/support tooling, other event workers, deletion, API keys/outgoing webhooks/OpenAPI, observability, Terraform, managed backups and deployed-environment validation.
+- [ ] **Phase 5 — Verification and launch:** lint, typecheck, financial-domain coverage, production build, 7 demo and 7 hosted integration/browser tests, automated accessibility/responsive checks and container health smoke pass. README, deployment/security docs, progress, launch checklist, economics, cost scenarios and roadmap are written. Full launch remains blocked on phases 3–4, live provider verification, independent security/accessibility review, capacity tests and field performance measurements.
 
 ## Definition of done
 
@@ -91,13 +93,21 @@ Every completed phase must leave the app runnable with `npm run dev`, have compl
 
 ```text
 src/app/                     public pages and finance routes
+src/app/app/                 authenticated hosted workspace routes
+src/app/api/identity/        Better Auth handlers
+src/app/api/v1/              tenant-scoped finance/membership API
 src/components/finance/      persistent provider, accessible forms, lazy chart
+src/components/hosted/       auth, workspaces, finance and security screens
 src/components/layout/       responsive shell, command palette, PWA registration
 src/components/marketing/    shared public navigation and footer
 src/lib/finance/             validated ledger, seed, calculations, CSV/OFX parser
+src/lib/hosted/              identity, RBAC, repository, rate limits and email
 src/lib/                     retained legacy API helpers
 src/middleware.ts            disabled-by-default legacy API gate
 tests/unit/                  domain and import/export invariants
 tests/e2e/                   browser workflows, accessibility, API gate checks
+tests/hosted/                real identity, tenant isolation, DB and browser tests
+prisma/hosted/               separate v2 schema and migration
+scripts/                     isolated hosted setup and email worker
 public/                      service worker and offline recovery page
 ```

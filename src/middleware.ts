@@ -7,6 +7,9 @@ import {
 
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
+  // Hosted handlers validate the real session and workspace on the Node server.
+  if (path.startsWith("/api/identity/") || path.startsWith("/api/v1/"))
+    return NextResponse.next();
   // The v2 browser demo has no access to the legacy single-user database API.
   if (!path.startsWith("/api/") || path === "/api/health")
     return NextResponse.next();

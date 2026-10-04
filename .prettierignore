@@ -1,0 +1,4 @@
+src/generated/
+.next/
+coverage/
+test-results/

@@ -38,3 +38,8 @@ playwright-report/
 # Infrastructure state
 .terraform/
 *.tfstate*
+
+# Generated v2 client and local development secrets
+src/generated/
+.local/
+.env.hosted.local

@@ -3,8 +3,7 @@ import type { ReactNode } from "react";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/fraunces";
 import "./globals.css";
-import { AppShell } from "@/components/layout/app-shell";
-import { FinanceProvider } from "@/components/finance/provider";
+import { ProductProvider } from "@/components/layout/product-provider";
 import { PwaRegistration } from "@/components/layout/pwa-registration";
 
 export const metadata: Metadata = {
@@ -52,9 +51,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" data-theme="light">
       <body className="font-sans antialiased">
         <PwaRegistration />
-        <FinanceProvider>
-          <AppShell>{children}</AppShell>
-        </FinanceProvider>
+        <ProductProvider>{children}</ProductProvider>
       </body>
     </html>
   );

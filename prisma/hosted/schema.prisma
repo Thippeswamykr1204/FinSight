@@ -1,0 +1,279 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../src/generated/hosted"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("HOSTED_DATABASE_URL")
+}
+
+model User {
+  id               String            @id
+  name             String
+  email            String            @unique
+  emailVerified    Boolean           @default(false)
+  image            String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  twoFactorEnabled Boolean           @default(false)
+  sessions         Session[]
+  accounts         Account[]
+  twoFactors       TwoFactor[]
+  passkeys         Passkey[]
+  memberships      WorkspaceMember[]
+
+  @@map("v2_users")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("v2_sessions")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("v2_auth_accounts")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("v2_verifications")
+}
+
+model TwoFactor {
+  id                      String    @id
+  secret                  String
+  backupCodes             String
+  userId                  String
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verified                Boolean   @default(true)
+  failedVerificationCount Int       @default(0)
+  lockedUntil             DateTime?
+
+  @@index([userId])
+  @@index([secret])
+  @@map("v2_two_factors")
+}
+
+model Passkey {
+  id           String   @id
+  name         String?
+  publicKey    String
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialID String   @unique
+  counter      Int
+  deviceType   String
+  backedUp     Boolean
+  transports   String?
+  createdAt    DateTime @default(now())
+  aaguid       String?
+
+  @@index([userId])
+  @@map("v2_passkeys")
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+model Workspace {
+  id          String                @id @default(cuid())
+  name        String
+  currency    String                @default("USD") @db.Char(3)
+  revision    Int                   @default(0)
+  createdAt   DateTime              @default(now())
+  members     WorkspaceMember[]
+  accounts    FinancialAccount[]
+  entries     LedgerEntry[]
+  budgets     BudgetPlan[]
+  goals       SavingsGoal[]
+  writes      IdempotentWrite[]
+  audit       AuditEvent[]
+  invitations WorkspaceInvitation[]
+
+  @@map("v2_workspaces")
+}
+
+model WorkspaceMember {
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(VIEWER)
+  createdAt   DateTime      @default(now())
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@index([userId, createdAt])
+  @@map("v2_workspace_members")
+}
+
+model WorkspaceInvitation {
+  id          String        @id @default(cuid())
+  workspaceId String
+  email       String
+  role        WorkspaceRole @default(VIEWER)
+  tokenHash   String        @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, email])
+  @@map("v2_workspace_invitations")
+}
+
+model FinancialAccount {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  name           String
+  type           String
+  openingBalance BigInt
+  createdAt      DateTime      @default(now())
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  entries        LedgerEntry[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, createdAt, id])
+  @@map("v2_financial_accounts")
+}
+
+model LedgerEntry {
+  id          String           @id @default(cuid())
+  workspaceId String
+  accountId   String
+  merchant    String
+  amount      BigInt
+  date        DateTime         @db.Date
+  type        String
+  category    String
+  note        String           @default("")
+  importKey   String?
+  version     Int              @default(1)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  account     FinancialAccount @relation(fields: [workspaceId, accountId], references: [workspaceId, id], onDelete: Restrict)
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, importKey])
+  @@index([workspaceId, date(sort: Desc), id(sort: Desc)])
+  @@index([workspaceId, category, date])
+  @@map("v2_ledger_entries")
+}
+
+model BudgetPlan {
+  id          String    @id @default(cuid())
+  workspaceId String
+  category    String
+  month       String    @db.Char(7)
+  limit       BigInt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, category, month])
+  @@index([workspaceId, month])
+  @@map("v2_budget_plans")
+}
+
+model SavingsGoal {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  target      BigInt
+  saved       BigInt    @default(0)
+  due         DateTime  @db.Date
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, due])
+  @@map("v2_savings_goals")
+}
+
+model IdempotentWrite {
+  workspaceId String
+  key         String
+  actorId     String
+  fingerprint String
+  response    Json
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, key])
+  @@index([createdAt])
+  @@map("v2_idempotent_writes")
+}
+
+model AuditEvent {
+  id          String    @id @default(cuid())
+  workspaceId String
+  actorId     String
+  action      String
+  resourceId  String?
+  requestId   String
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt(sort: Desc), id])
+  @@map("v2_audit_events")
+}
+
+model RateBucket {
+  key       String   @id
+  count     Int      @default(1)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("v2_rate_buckets")
+}
+
+model EmailOutbox {
+  id          String    @id @default(cuid())
+  to          String
+  subject     String
+  text        String
+  attempts    Int       @default(0)
+  availableAt DateTime  @default(now())
+  lockedAt    DateTime?
+  sentAt      DateTime?
+  lastError   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([sentAt, availableAt])
+  @@map("v2_email_outbox")
+}

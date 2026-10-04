@@ -1,0 +1,40 @@
+name: finsight-hosted-local
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: finsight_local
+      POSTGRES_PASSWORD: local_development_only
+      POSTGRES_DB: finsight_hosted_local
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - hosted-local-db:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U finsight_local -d finsight_hosted_local"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "127.0.0.1:11025:1025"
+      - "127.0.0.1:18025:8025"
+  postgres-test:
+    image: postgres:16-alpine
+    profiles: [test]
+    environment:
+      POSTGRES_USER: finsight_test
+      POSTGRES_PASSWORD: test_database_only
+      POSTGRES_DB: finsight_hosted_test
+    ports:
+      - "127.0.0.1:55433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U finsight_test -d finsight_hosted_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+volumes:
+  hosted-local-db:

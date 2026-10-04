@@ -11,3 +11,5 @@ playwright-report
 *.tsbuildinfo
 docs
 tests
+src/generated
+.local

@@ -1,8 +1,8 @@
 # FinSight v2
 
-**Money, with perspective.** A premium, responsive finance workspace with a working browser-local demo.
+**Money, with perspective.** A premium, responsive finance workspace with verified hosted identity and a browser-local demo.
 
-> Current status: product-core milestone, not a hosted commercial SaaS. Authentication, multi-tenant persistence, Stripe billing, live bank sync and production infrastructure are still pending. See [PROGRESS](docs/PROGRESS.md) for the exact continuation point.
+> Current status: a verified demo plus a real hosted identity/workspace foundation. Stripe billing, live bank sync, full data-rights workflows and production operations are still pending. See [PROGRESS](docs/PROGRESS.md) for the exact continuation point.
 
 ## Run it
 
@@ -14,7 +14,9 @@ npm run dev
 
 Open **http://localhost:3000**. No environment file, database, API keys or sign-in is required for the demo. The landing page leads into a fictional workspace. Changes are stored in browser local storage and persist across reloads.
 
-For a production-mode local preview, run `npm run build` then `npm run start`. With a running Docker daemon, `docker compose up --build` builds the standalone demo container. The Docker configuration has been validated, but the image was not built in this environment because its daemon was stopped.
+For real database-backed workspaces, run **`npm run dev:hosted`** with Docker available. This starts an isolated local Postgres database, Mailpit, the email worker and the app. Open `/sign-up`; verification emails arrive at **http://localhost:18025**. Hosted records live under `/app` and never mix with the browser demo. See [HOSTED.md](docs/HOSTED.md) for configuration, identity flows, authorization and test details.
+
+For a production-mode local preview, run `npm run build` then `npm run start`. With a running Docker daemon, `docker compose up --build` builds the standalone demo container. The image has been built and its health check smoke-tested. If port 3000 is occupied, set `FINSIGHT_PORT=3300` when running Compose.
 
 ## What works
 
@@ -29,6 +31,8 @@ For a production-mode local preview, run `npm run build` then `npm run start`. W
 - Marketing, planned pricing, features, FAQ, preview privacy/terms, sitemap, Open Graph and install manifest.
 - Production service worker with offline recovery; financial pages and API responses are not cached.
 - Unit tests, coverage gates, Playwright workflows, axe accessibility checks and runtime dependency scanning.
+- Hosted identity: email/password, verification, reset, magic links, TOTP/recovery codes, passkeys and session/device revocation. Google/Apple buttons require configured provider credentials.
+- Real Postgres workspaces with owner/admin/editor/viewer roles, email invitations, tenant-scoped account/transaction/budget/goal mutations, optimistic concurrency, idempotency and audit records.
 
 All ledger amounts use integer minor units. The demo uses USD; selecting a locale changes formatting, not exchange rates. Goal contributions earmark existing savings and do not transfer money or inflate net worth. No payment, bank connection, email or AI request is simulated as a successful live operation.
 
@@ -44,11 +48,18 @@ flowchart LR
   Provider --> Local[(Browser local storage)]
   Domain --> Import[CSV / OFX preview + deduplication]
   Next --> Health[Public liveness endpoint]
+  Next --> Hosted[Authenticated workspace UI]
+  Hosted --> API[Tenant-scoped API v1]
+  API --> Identity[Better Auth + database sessions]
+  API --> Postgres[(Isolated v2 PostgreSQL ledger)]
+  Identity --> Postgres
+  Postgres --> Outbox[Encrypted email outbox + worker]
+  Outbox --> SMTP[SMTP delivery]
   Next --> Gate[Disabled legacy API gate]
   Gate -. explicitly enabled operator-only .-> Prisma[Legacy Prisma / PostgreSQL]
 ```
 
-The new finance domain is in `src/lib/finance/`; shared state and accessible dialog/form primitives are in `src/components/finance/`. Pages consume the same ledger so mutations recalculate related views. Original server helpers/schema are preserved for reference behind the disabled legacy API; they are not a tenant-safe v2 backend.
+The shared finance domain is in `src/lib/finance/`; demo state and accessible dialog/form primitives are in `src/components/finance/`. Hosted services are in `src/lib/hosted`, with a separate schema in `prisma/hosted`, APIs under `/api/v1`, identity under `/api/identity`, and UI under `/app`. Original server helpers/schema remain behind the disabled legacy API and are not used by hosted v2.
 
 ### Decisions
 
@@ -79,22 +90,25 @@ The original env template contained credentials. Current values are sanitized; h
 
 ```sh
 npm run lint
+npm run db:generate
 npm run typecheck
 npm run test:coverage
 npm run build
 npx playwright install chromium
-npm run test:e2e
 E2E_PRODUCTION=1 npm run test:e2e
+E2E_PRODUCTION=1 npm run test:hosted
 ```
 
-Run production-mode browser checks after `npm run build` and before running the dev server again; both Next modes use `.next`. The browser runner manages its own server on port 3100. `npm run format:check` checks source formatting; `npm audit --omit=dev --audit-level=high` gates runtime dependencies. Financial-domain coverage thresholds are 80% lines/statements/functions and 70% branches; they do not claim full UI coverage.
+Run production-mode browser checks after `npm run build` and before running the dev server again; both Next modes use `.next`. The demo runner manages its server on port 3100; the hosted runner uses 3200 and requires Docker for isolated Postgres and email. To test development mode, omit `E2E_PRODUCTION=1`. `npm run format:check` checks source formatting; `npm audit --omit=dev --audit-level=high` gates runtime dependencies. Financial-domain coverage thresholds are 80% lines/statements/functions and 70% branches; they do not claim full UI or hosted-service unit coverage.
 
-The automated browser suite covers transaction mutation/persistence, import deduplication, budgets/goals/accounts, onboarding/preferences/data clearing, command palette, public routes, light/dark accessibility, mobile overflow and disabled API security. See [PROGRESS](docs/PROGRESS.md) for the latest verified counts and limitations.
+The demo suite covers transaction mutation/persistence, import deduplication, budgets/goals/accounts, onboarding/preferences/data clearing, command palette, public routes, light/dark accessibility, mobile overflow and disabled API security. The hosted suite adds actual email verification, reset/revocation, TOTP/recovery, passkeys, server persistence, tenant isolation, permissions, idempotency, concurrency and database constraints. See [PROGRESS](docs/PROGRESS.md) for the latest verified counts and limitations.
 
 ## Documentation
 
 - [Original review](docs/REVIEW.md)
 - [Build plan and target architecture](docs/BUILD_PLAN.md)
+- [Hosted identity, local setup and tenant boundaries](docs/HOSTED.md)
+- [Authenticated API v1 contract](docs/API.md)
 - [Progress and next steps](docs/PROGRESS.md)
 - [Deployment and runbooks](docs/DEPLOYMENT.md)
 - [Security and threat model](docs/SECURITY.md)

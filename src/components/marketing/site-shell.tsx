@@ -24,10 +24,10 @@ export function SiteHeader() {
         </Link>
       </nav>
       <Link
-        href="/dashboard"
+        href="/sign-in"
         className="inline-flex items-center gap-2 rounded-xl bg-[#101b16] px-4 py-3 text-xs font-semibold text-white transition-transform hover:-translate-y-0.5"
       >
-        Explore the demo <ArrowRight size={15} />
+        Sign in <ArrowRight size={15} />
       </Link>
     </header>
   );

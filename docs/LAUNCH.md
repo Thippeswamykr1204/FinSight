@@ -2,7 +2,7 @@
 
 ## Release status
 
-The current branch is a verified interactive demo milestone. It is suitable for product reviews and demonstrations. It is not the requested revenue-generating hosted SaaS yet. Identity, tenant persistence, billing and live providers remain the critical path.
+The current branch contains a verified interactive demo and a verified hosted identity/tenant-persistence foundation. It is not the requested revenue-generating hosted SaaS yet. Billing/entitlements, live provider verification, data-rights operations and production infrastructure remain the critical path.
 
 ## Demo release checklist
 
@@ -14,22 +14,27 @@ The current branch is a verified interactive demo milestone. It is suitable for 
 - [x] Explicit demo labels and honest provider availability.
 - [x] Env template sanitized and legacy API disabled by default.
 - [x] SEO metadata, sitemap, robots, Open Graph image, install manifest and offline recovery.
-- [ ] Build and run the Docker image with an available daemon.
+- [x] Build and run the standalone Docker image with a healthy liveness response.
 - [ ] Measure real-device performance and field Core Web Vitals on a deployed preview.
 
 ## Commercial launch checklist
 
-- [ ] Workspace-aware schema, migration/backfill, authorization and tenant-isolation tests.
-- [ ] Email/password, Google/Apple, magic link, TOTP, passkeys, recovery and device/session controls.
+- [x] Separate v2 workspace schema/migration, integer-money constraints, RBAC and tenant-isolation tests. Legacy conversion/backfill is a separate migration project.
+- [x] Verified email/password, magic links, TOTP/recovery, passkeys and session controls against isolated Postgres/SMTP dependencies.
+- [ ] Google/Apple live provider verification and production SMTP deliverability. Adapters/configuration gates are present.
 - [ ] Stripe sandbox and live verification; trials, invoices, plan gates, limits and replay-safe webhooks.
 - [ ] Bank provider contracts, sandbox/live adapters, reconnect and consent revocation.
 - [ ] Transaction rules, recurring scheduling, subscription detection, anomaly model, receipt storage and investments.
 - [ ] Multi-currency ledger, dated exchange rates, split transactions and PDF reporting.
-- [ ] Household invitations and roles; admin, support impersonation and audited feature flags.
-- [ ] Email/push delivery, digest jobs, funnels, referrals, waitlist and invite systems.
-- [ ] Versioned public API, scoped keys, cursor pagination, signed outgoing webhooks and OpenAPI contract tests.
-- [ ] Data export/deletion across all hosted stores and providers.
-- [ ] Tracing, logs, SLO alerts, rate limiting, load tests, CI/CD deployment, IaC, backups and restore exercise.
+- [x] Household invitations, owner/admin/editor/viewer roles and financial audit records.
+- [ ] Admin/support impersonation and audited feature flags.
+- [x] Durable encrypted transactional email outbox, leased/retrying worker and local SMTP delivery.
+- [ ] Push delivery, digests, funnels, referrals, waitlist and production email operations.
+- [x] Versioned session-authenticated API, cursor pagination, bounded payloads, shared rate limits and idempotent finance mutations.
+- [ ] Scoped public API keys, signed outgoing webhooks and OpenAPI contract tests.
+- [x] Owner-authorized hosted financial JSON export.
+- [ ] Full data-subject export/deletion across identity, all hosted stores and providers.
+- [ ] Tracing, central logs, SLO alerts, load tests, CI/CD deployment, IaC, backups and restore exercise. Request IDs/redacted API logs and CI configuration are present.
 - [ ] Legal entity/contacts, reviewed terms, privacy notice and provider agreements.
 
 ## Pricing hypothesis
