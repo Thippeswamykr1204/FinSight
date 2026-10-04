@@ -77,7 +77,7 @@ infra/                  Docker, CI, Terraform starter configuration
 ## Phases
 
 - [x] **Phase 0 — Baseline review:** inspect the repository, record strengths/gaps, and capture the initial toolchain failure caused by missing installed dependencies.
-- [ ] **Phase 1 — Foundation:** install dependencies, establish a clean design-token layer, introduce the responsive app shell, metadata, error/loading states, demo data, PWA assets, and public route structure.
+- [x] **Phase 1 — Foundation:** install dependencies, establish a clean design-token layer, introduce the responsive app shell, metadata, error/loading states, PWA assets, and public route structure.
 - [ ] **Phase 2 — Product core:** rebuild dashboard, transactions, budgets, insights, goals, net worth, and forecast surfaces with interactive charts, filters, animations, keyboard support, and mobile layouts.
 - [ ] **Phase 3 — Activation and monetization:** ship onboarding, workspace switcher, settings, plan cards, feature gates, billing placeholder flows, connection/import center, notifications, global search, and command palette.
 - [ ] **Phase 4 — SaaS readiness:** add versioned API foundations, audit/admin views, event model, security headers, GDPR self-service surfaces, API docs, health checks, Docker Compose, CI, and operational artifacts.

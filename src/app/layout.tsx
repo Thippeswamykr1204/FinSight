@@ -1,39 +1,40 @@
-import type { Metadata } from "next";
-import { headers } from "next/headers";
-import { Inter } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import type { ReactNode } from "react";
 import "./globals.css";
-import { Sidebar } from "@/components/layout/sidebar";
-import { Header } from "@/components/layout/header";
+import { AppShell } from "@/components/layout/app-shell";
 import { ToastProvider } from "@/components/ui/toast";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-
 export const metadata: Metadata = {
-  title: "FinSight – Personal Finance Tracker",
-  description: "Track your expenses, set budgets, and gain financial insights",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
+  title: { default: "FinSight — Money, with perspective.", template: "%s · FinSight" },
+  description: "A calmer way to understand your money, plan what is next, and build financial momentum.",
+  applicationName: "FinSight",
+  keywords: ["personal finance", "budgeting", "cash flow", "financial planning"],
+  authors: [{ name: "FinSight" }],
+  creator: "FinSight",
+  openGraph: {
+    type: "website",
+    siteName: "FinSight",
+    title: "FinSight — Money, with perspective.",
+    description: "See what changed. Know what is safe. Plan what is next.",
+  },
+  twitter: { card: "summary_large_image", title: "FinSight — Money, with perspective.", description: "A calmer financial operating system." },
+  robots: { index: true, follow: true },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const pathname = headers().get("x-pathname") || "";
-  const showAppShell = !pathname.startsWith("/login");
+export const viewport: Viewport = {
+  themeColor: "#f5f7f6",
+  colorScheme: "light dark",
+  width: "device-width",
+  initialScale: 1,
+};
 
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.variable} font-sans bg-slate-950 text-slate-100 antialiased`}>
+    <html lang="en" data-theme="light">
+      <body className="font-sans antialiased">
         <ToastProvider>
-          {showAppShell ? (
-            <div className="flex h-screen overflow-hidden">
-              <Sidebar />
-              <div className="flex flex-1 flex-col overflow-hidden ml-60">
-                <Header />
-                <main className="flex-1 overflow-y-auto p-6">
-                  {children}
-                </main>
-              </div>
-            </div>
-          ) : (
-            children
-          )}
+          <AppShell>{children}</AppShell>
         </ToastProvider>
       </body>
     </html>

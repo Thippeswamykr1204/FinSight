@@ -51,7 +51,7 @@ export function CategoryChart({ data }: CategoryChartProps) {
     <Card>
       <CardHeader>
         <CardTitle>Spending by Category</CardTitle>
-        <CardDescription>This month's breakdown</CardDescription>
+        <CardDescription>This month&apos;s breakdown</CardDescription>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
