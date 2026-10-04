@@ -13,7 +13,7 @@ function getMonthlyOccurrenceDate(anchorDate: Date, monthOffset: number) {
     anchorDate.getHours(),
     anchorDate.getMinutes(),
     anchorDate.getSeconds(),
-    anchorDate.getMilliseconds()
+    anchorDate.getMilliseconds(),
   );
   return occurrence;
 }
@@ -44,13 +44,16 @@ export async function POST(_: NextRequest) {
       const existingMonths = new Set(
         existingOccurrences.map(
           (transaction) =>
-            `${transaction.date.getFullYear()}-${transaction.date.getMonth() + 1}`
-        )
+            `${transaction.date.getFullYear()}-${transaction.date.getMonth() + 1}`,
+        ),
       );
 
       let monthOffset = 1;
       while (true) {
-        const occurrenceDate = getMonthlyOccurrenceDate(anchor.date, monthOffset);
+        const occurrenceDate = getMonthlyOccurrenceDate(
+          anchor.date,
+          monthOffset,
+        );
         if (isAfter(occurrenceDate, now)) break;
 
         const occurrenceKey = `${occurrenceDate.getFullYear()}-${occurrenceDate.getMonth() + 1}`;

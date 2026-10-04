@@ -1,48 +1,65 @@
 {
   "name": "finsight",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
     "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "check": "npm run lint && npm run typecheck && npm run test:coverage && npm run build",
+    "format": "prettier --write 'src/**/*.{ts,tsx,css}' 'tests/**/*.ts' '*.{json,js,ts,mts}'",
+    "format:check": "prettier --check 'src/**/*.{ts,tsx,css}' 'tests/**/*.ts' '*.{json,js,ts,mts}'",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio"
   },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "overrides": {
+    "postcss": "^8.5.28",
+    "esbuild": "^0.28.2"
+  },
   "dependencies": {
+    "@fontsource-variable/fraunces": "^5.3.0",
+    "@fontsource-variable/geist": "^5.3.0",
     "@prisma/client": "^5.22.0",
     "@radix-ui/react-dialog": "^1.0.5",
-    "@radix-ui/react-label": "^2.0.2",
-    "@radix-ui/react-select": "^2.0.0",
     "@radix-ui/react-slot": "^1.0.2",
-    "@radix-ui/react-toast": "^1.1.5",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.3.1",
     "ioredis": "^5.3.2",
     "lucide-react": "^0.344.0",
-    "next": "14.1.3",
+    "next": "^15.5.27",
     "prisma": "^5.22.0",
     "react": "^18",
     "react-dom": "^18",
     "recharts": "^2.12.2",
     "tailwind-merge": "^2.2.1",
-    "tailwindcss-animate": "^1.0.7",
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@types/node": "^20",
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.20.5",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@vitest/coverage-v8": "^5.0.3",
     "autoprefixer": "^10.0.1",
     "eslint": "^8",
-    "eslint-config-next": "14.1.3",
-    "postcss": "^8",
+    "eslint-config-next": "^15.5.27",
+    "postcss": "^8.5.28",
+    "prettier": "^3.9.9",
     "tailwindcss": "^3.3.0",
     "tsx": "^4.7.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.3"
   }
 }

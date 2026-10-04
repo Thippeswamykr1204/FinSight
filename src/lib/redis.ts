@@ -23,9 +23,9 @@ redis.on("error", () => {
 });
 
 export const CACHE_TTL = {
-  DASHBOARD: 60,       // 1 minute
-  TRANSACTIONS: 30,    // 30 seconds
-  BUDGETS: 120,        // 2 minutes
+  DASHBOARD: 60, // 1 minute
+  TRANSACTIONS: 30, // 30 seconds
+  BUDGETS: 120, // 2 minutes
 } as const;
 
 export async function getCache<T>(key: string): Promise<T | null> {
@@ -42,7 +42,7 @@ export async function getCache<T>(key: string): Promise<T | null> {
 export async function setCache(
   key: string,
   value: unknown,
-  ttl: number
+  ttl: number,
 ): Promise<void> {
   if (redisUnavailable) return;
   try {

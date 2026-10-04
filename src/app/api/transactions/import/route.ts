@@ -11,24 +11,36 @@ import {
   TRANSACTION_TYPE_LABELS,
   getCurrentMonthYear,
 } from "@/lib/utils";
-import type { Category, TransactionImportPreviewRow, TransactionImportResult, TransactionType } from "@/types";
+import type {
+  Category,
+  TransactionImportPreviewRow,
+  TransactionImportResult,
+  TransactionType,
+} from "@/types";
 
 const categoryLookup = new Map<string, string>(
   Object.entries(CATEGORY_LABELS).flatMap(([key, label]) => [
     [key, key],
     [label.toUpperCase(), key],
     [label.replace(/\s*&\s*/g, " AND ").toUpperCase(), key],
-  ])
+  ]),
 );
 
 const transactionTypeLookup = new Map<string, TransactionType>(
   Object.entries(TRANSACTION_TYPE_LABELS).flatMap(([key, label]) => [
     [key, key as TransactionType],
     [label.toUpperCase(), key as TransactionType],
-  ])
+  ]),
 );
 
-const supportedHeaders = ["amount", "date", "description", "type", "category", "recurrencefrequency"];
+const supportedHeaders = [
+  "amount",
+  "date",
+  "description",
+  "type",
+  "category",
+  "recurrencefrequency",
+];
 
 function makeDuplicateKey(input: {
   amount: number;
@@ -59,27 +71,34 @@ export async function POST(request: NextRequest) {
 
     const rows = parseCsv(csv);
     if (rows.length < 2) {
-      return apiError("CSV must include a header row and at least one transaction row", 400);
+      return apiError(
+        "CSV must include a header row and at least one transaction row",
+        400,
+      );
     }
 
     const headers = rows[0].map((header) => header.trim().toLowerCase());
-    const headerIndex = new Map(headers.map((header, index) => [header, index]));
+    const headerIndex = new Map(
+      headers.map((header, index) => [header, index]),
+    );
     const missingHeaders = ["amount", "date", "description", "category"].filter(
-      (header) => !headerIndex.has(header)
+      (header) => !headerIndex.has(header),
     );
 
     if (missingHeaders.length > 0) {
       return apiError(
         `Missing required header${missingHeaders.length > 1 ? "s" : ""}: ${missingHeaders.join(", ")}`,
-        400
+        400,
       );
     }
 
-    const unsupportedHeadersFound = headers.filter((header) => !supportedHeaders.includes(header));
+    const unsupportedHeadersFound = headers.filter(
+      (header) => !supportedHeaders.includes(header),
+    );
     if (unsupportedHeadersFound.length > 0) {
       return apiError(
         `Unsupported header${unsupportedHeadersFound.length > 1 ? "s" : ""}: ${unsupportedHeadersFound.join(", ")}`,
-        400
+        400,
       );
     }
 
@@ -87,9 +106,13 @@ export async function POST(request: NextRequest) {
     const parsedRows = rows.slice(1).map((row, index) => {
       const rawCategory = row[headerIndex.get("category")!] ?? "";
       const rawType = row[headerIndex.get("type") ?? -1] ?? "EXPENSE";
-      const normalizedType = transactionTypeLookup.get(rawType.trim().toUpperCase()) ?? "EXPENSE";
-      const normalizedCategory = categoryLookup.get(rawCategory.trim().toUpperCase());
-      const recurrenceFrequency = row[headerIndex.get("recurrencefrequency") ?? -1] ?? "";
+      const normalizedType =
+        transactionTypeLookup.get(rawType.trim().toUpperCase()) ?? "EXPENSE";
+      const normalizedCategory = categoryLookup.get(
+        rawCategory.trim().toUpperCase(),
+      );
+      const recurrenceFrequency =
+        row[headerIndex.get("recurrencefrequency") ?? -1] ?? "";
 
       const candidate = {
         amount: Number(row[headerIndex.get("amount")!] ?? ""),
@@ -106,7 +129,9 @@ export async function POST(request: NextRequest) {
           .flat()
           .filter(Boolean)
           .join(", ");
-        validationErrors.push(`Row ${index + 2}: ${messages || "Invalid data"}`);
+        validationErrors.push(
+          `Row ${index + 2}: ${messages || "Invalid data"}`,
+        );
         return null;
       }
 
@@ -114,7 +139,9 @@ export async function POST(request: NextRequest) {
         rowNumber: index + 2,
         ...parsed.data,
         date: new Date(parsed.data.date),
-        recurringSeriesId: parsed.data.recurrenceFrequency ? randomUUID() : null,
+        recurringSeriesId: parsed.data.recurrenceFrequency
+          ? randomUUID()
+          : null,
       };
     });
 
@@ -123,16 +150,23 @@ export async function POST(request: NextRequest) {
     }
 
     const validTransactions = parsedRows.filter(
-      (transaction): transaction is NonNullable<(typeof parsedRows)[number]> => Boolean(transaction)
+      (transaction): transaction is NonNullable<(typeof parsedRows)[number]> =>
+        Boolean(transaction),
     );
 
     if (validTransactions.length === 0) {
       return apiError("No valid transaction rows found in CSV", 400);
     }
 
-    const transactionDates = validTransactions.map((transaction) => transaction.date);
-    const earliestDate = new Date(Math.min(...transactionDates.map((date) => date.getTime())));
-    const latestDate = new Date(Math.max(...transactionDates.map((date) => date.getTime())));
+    const transactionDates = validTransactions.map(
+      (transaction) => transaction.date,
+    );
+    const earliestDate = new Date(
+      Math.min(...transactionDates.map((date) => date.getTime())),
+    );
+    const latestDate = new Date(
+      Math.max(...transactionDates.map((date) => date.getTime())),
+    );
 
     const existingTransactions = await prisma.transaction.findMany({
       where: {
@@ -153,37 +187,44 @@ export async function POST(request: NextRequest) {
     const existingKeys = new Set(existingTransactions.map(makeDuplicateKey));
     const seenImportKeys = new Set<string>();
 
-    const previewRows: TransactionImportPreviewRow[] = validTransactions.map((transaction) => {
-      const duplicateKey = makeDuplicateKey({
-        amount: transaction.amount,
-        date: transaction.date,
-        description: transaction.description,
-        type: transaction.type,
-        category: transaction.category,
-      });
-      const duplicate = existingKeys.has(duplicateKey) || seenImportKeys.has(duplicateKey);
-      seenImportKeys.add(duplicateKey);
+    const previewRows: TransactionImportPreviewRow[] = validTransactions.map(
+      (transaction) => {
+        const duplicateKey = makeDuplicateKey({
+          amount: transaction.amount,
+          date: transaction.date,
+          description: transaction.description,
+          type: transaction.type,
+          category: transaction.category,
+        });
+        const duplicate =
+          existingKeys.has(duplicateKey) || seenImportKeys.has(duplicateKey);
+        seenImportKeys.add(duplicateKey);
 
-      return {
-        rowNumber: transaction.rowNumber,
-        amount: transaction.amount,
-        date: transaction.date.toISOString(),
-        description: transaction.description,
-        type: transaction.type,
-        category: transaction.category,
-        recurrenceFrequency: transaction.recurrenceFrequency ?? null,
-        duplicate,
-      };
-    });
+        return {
+          rowNumber: transaction.rowNumber,
+          amount: transaction.amount,
+          date: transaction.date.toISOString(),
+          description: transaction.description,
+          type: transaction.type,
+          category: transaction.category,
+          recurrenceFrequency: transaction.recurrenceFrequency ?? null,
+          duplicate,
+        };
+      },
+    );
 
-    const transactionsToInsert = validTransactions.filter((transaction, index) => {
-      if (!skipDuplicates) return true;
-      return !previewRows[index].duplicate;
-    });
+    const transactionsToInsert = validTransactions.filter(
+      (transaction, index) => {
+        if (!skipDuplicates) return true;
+        return !previewRows[index].duplicate;
+      },
+    );
 
     if (!dryRun && transactionsToInsert.length > 0) {
       await prisma.transaction.createMany({
-        data: transactionsToInsert.map(({ rowNumber, ...transaction }) => transaction),
+        data: transactionsToInsert.map(
+          ({ rowNumber, ...transaction }) => transaction,
+        ),
       });
 
       await Promise.all([

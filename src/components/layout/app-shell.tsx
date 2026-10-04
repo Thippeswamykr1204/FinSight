@@ -2,246 +2,419 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowLeftRight,
   Bell,
-  ChevronDown,
-  Command,
   CreditCard,
   Goal,
   LayoutDashboard,
   Lightbulb,
-  LogOut,
+  Menu,
   Moon,
   Plus,
   Search,
   Settings2,
-  ShieldCheck,
   Sparkles,
   Sun,
   Upload,
   WalletCards,
-  X,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { FinanceDialog } from "@/components/finance/primitives";
+import { useFinance } from "@/components/finance/provider";
+import { summarize } from "@/lib/finance/model";
 
-type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
-
-const navGroups: Array<{ label: string; items: NavItem[] }> = [
+const nav = [
+  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
+  { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
+  { href: "/budgets", label: "Budgets", icon: WalletCards },
+  { href: "/goals", label: "Goals", icon: Goal },
+  { href: "/insights", label: "Insights", icon: Lightbulb },
+  { href: "/accounts", label: "Accounts", icon: CreditCard },
+];
+const actions = [
+  { href: "/transactions?action=add", label: "Add a transaction", icon: Plus },
   {
-    label: "Overview",
-    items: [
-      { href: "/dashboard", label: "Home", icon: LayoutDashboard },
-      { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
-      { href: "/budgets", label: "Budgets", icon: WalletCards },
-      { href: "/goals", label: "Goals", icon: Goal },
-    ],
+    href: "/transactions?action=import",
+    label: "Import a statement",
+    icon: Upload,
   },
-  {
-    label: "Plan",
-    items: [
-      { href: "/insights", label: "Insights", icon: Lightbulb },
-      { href: "/accounts", label: "Accounts", icon: CreditCard },
-    ],
-  },
+  ...nav,
+  { href: "/settings", label: "Settings and data controls", icon: Settings2 },
+];
+const publicPaths = [
+  "/",
+  "/login",
+  "/pricing",
+  "/features",
+  "/faq",
+  "/privacy",
+  "/terms",
 ];
 
-const pageMeta: Record<string, { title: string; description: string }> = {
-  "/dashboard": { title: "Good morning, Alex", description: "Here is your money, at a glance." },
-  "/transactions": { title: "Transactions", description: "Every move, automatically organized." },
-  "/budgets": { title: "Budgets", description: "Give every dollar a direction." },
-  "/goals": { title: "Goals", description: "Small steps toward the life you want." },
-  "/insights": { title: "Insights", description: "A clearer read on your financial patterns." },
-  "/accounts": { title: "Accounts", description: "Your financial world, connected." },
-  "/settings": { title: "Settings", description: "Make FinSight work your way." },
-  "/admin": { title: "Admin", description: "Keep the product healthy and trusted." },
-};
-
-const paletteItems = [
-  { href: "/transactions?action=add", label: "Add a transaction", hint: "Create", icon: Plus },
-  { href: "/transactions?action=import", label: "Import a statement", hint: "Upload", icon: Upload },
-  { href: "/budgets", label: "Review your budgets", hint: "Plan", icon: WalletCards },
-  { href: "/goals", label: "Open your goals", hint: "Focus", icon: Goal },
-  { href: "/settings", label: "Open settings", hint: "Manage", icon: Settings2 },
-];
-
-function BrandMark({ compact = false }: { compact?: boolean }) {
+export function BrandMark() {
   return (
-    <div className="flex items-center gap-3">
-      <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-[13px] bg-[var(--ink)] text-[var(--mint)] shadow-[var(--shadow-sm)]">
-        <span className="absolute h-4 w-4 rounded-full border-2 border-[var(--mint-strong)] border-b-transparent rotate-45" />
-        <span className="h-1.5 w-1.5 rounded-full bg-[var(--mint-strong)]" />
+    <span className="inline-flex items-center gap-3">
+      <span className="relative grid h-9 w-9 place-items-center rounded-[13px] bg-[#101b16] text-[#b8f2d0]">
+        <span className="absolute h-4 w-4 rotate-45 rounded-full border-2 border-[#54d99a] border-b-transparent" />
+        <span className="h-1.5 w-1.5 rounded-full bg-[#54d99a]" />
       </span>
-      {!compact && (
-        <span className="text-[1.05rem] font-bold tracking-[-0.04em] text-[var(--ink)]">finsight</span>
-      )}
-    </div>
-  );
-}
-
-function Sidebar({ pathname, onClose }: { pathname: string; onClose?: () => void }) {
-  return (
-    <aside className="flex h-full w-[252px] shrink-0 flex-col border-r border-[var(--line)] bg-[var(--surface)] px-4 py-5">
-      <div className="flex items-center justify-between px-2">
-        <Link href="/dashboard" aria-label="FinSight home" onClick={onClose}>
-          <BrandMark />
-        </Link>
-        {onClose && (
-          <button className="grid h-9 w-9 place-items-center rounded-xl text-[var(--ink-muted)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink)]" onClick={onClose} aria-label="Close navigation">
-            <X className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-
-      <div className="mt-8 rounded-[16px] border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-        <button className="flex w-full items-center gap-3 text-left" aria-label="Switch workspace">
-          <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[var(--mint)] text-xs font-bold text-[var(--mint-deep)]">A</span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-xs font-semibold text-[var(--ink)]">Alex’s household</span>
-            <span className="mt-0.5 block text-[0.68rem] text-[var(--ink-muted)]">Personal workspace</span>
-          </span>
-          <ChevronDown className="h-4 w-4 text-[var(--ink-muted)]" />
-        </button>
-      </div>
-
-      <nav className="mt-8 flex-1" aria-label="Main navigation">
-        {navGroups.map((group) => (
-          <div key={group.label} className="mb-7">
-            <p className="mb-2 px-3 text-[0.63rem] font-bold uppercase tracking-[0.18em] text-[var(--ink-muted)]">{group.label}</p>
-            <div className="space-y-1">
-              {group.items.map(({ href, label, icon: Icon }) => {
-                const active = pathname === href || pathname.startsWith(`${href}/`);
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={onClose}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-[12px] px-3 py-2.5 text-sm font-medium transition-colors",
-                      active
-                        ? "bg-[var(--mint)] text-[var(--mint-deep)]"
-                        : "text-[var(--ink-soft)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink)]"
-                    )}
-                  >
-                    <Icon className={cn("h-[17px] w-[17px] transition-transform group-hover:scale-105", active && "stroke-[2.4]")} />
-                    <span>{label}</span>
-                    {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--mint-deep)]" />}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </nav>
-
-      <div className="space-y-3 border-t border-[var(--line)] pt-4">
-        <Link href="/settings" onClick={onClose} className="flex items-center gap-3 rounded-[12px] px-3 py-2.5 text-sm font-medium text-[var(--ink-soft)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink)]">
-          <Settings2 className="h-[17px] w-[17px]" /> Settings
-        </Link>
-        <div className="rounded-[16px] bg-[var(--ink)] p-3.5 text-[var(--surface)]">
-          <div className="flex items-center gap-2 text-[var(--mint)]"><Sparkles className="h-4 w-4" /><span className="text-xs font-semibold">FinSight Pro</span></div>
-          <p className="mt-2 text-[0.7rem] leading-5 text-white/60">Unlock forecasting, smart rules, and unlimited connections.</p>
-          <Link href="/pricing" className="mt-3 inline-flex text-[0.7rem] font-bold text-[var(--mint)] hover:text-white">Explore Pro <span className="ml-1">↗</span></Link>
-        </div>
-        <div className="flex items-center gap-3 px-2 py-2">
-          <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--cobalt-soft)] text-xs font-bold text-[var(--cobalt)]">AS</span>
-          <div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-[var(--ink)]">Alex Smith</p><p className="truncate text-[0.68rem] text-[var(--ink-muted)]">alex@finsight.app</p></div>
-          <LogOut className="h-4 w-4 text-[var(--ink-muted)]" />
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function CommandPalette({ onClose }: { onClose: () => void }) {
-  const router = useRouter();
-  const [query, setQuery] = useState("");
-  const items = useMemo(() => paletteItems.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())), [query]);
-
-  return (
-    <div className="fixed inset-0 z-[80] flex items-start justify-center bg-[rgba(16,20,22,0.34)] px-4 pt-[15vh] backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Command palette" onMouseDown={onClose}>
-      <div className="w-full max-w-xl overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-[var(--shadow-lg)]" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="flex items-center gap-3 border-b border-[var(--line)] px-4">
-          <Search className="h-4 w-4 text-[var(--ink-muted)]" />
-          <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search FinSight or jump to…" className="h-14 flex-1 bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[var(--ink-muted)]" />
-          <kbd className="rounded-md border border-[var(--line)] bg-[var(--surface-muted)] px-1.5 py-1 text-[0.62rem] text-[var(--ink-muted)]">esc</kbd>
-        </div>
-        <div className="p-2">
-          <p className="px-3 py-2 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[var(--ink-muted)]">Quick actions</p>
-          {items.length ? items.map(({ href, label, hint, icon: Icon }) => (
-            <button key={href} onClick={() => { onClose(); router.push(href); }} className="flex w-full items-center gap-3 rounded-[11px] px-3 py-3 text-left hover:bg-[var(--surface-muted)]">
-              <span className="grid h-8 w-8 place-items-center rounded-[9px] bg-[var(--mint)] text-[var(--mint-deep)]"><Icon className="h-4 w-4" /></span>
-              <span className="flex-1 text-sm font-medium text-[var(--ink)]">{label}</span>
-              <span className="text-xs text-[var(--ink-muted)]">{hint}</span>
-            </button>
-          )) : <p className="px-3 py-6 text-sm text-[var(--ink-muted)]">No matching actions yet.</p>}
-        </div>
-        <div className="flex items-center justify-between border-t border-[var(--line)] bg-[var(--surface-raised)] px-4 py-3 text-[0.65rem] text-[var(--ink-muted)]"><span>Navigate with your keyboard</span><span className="flex items-center gap-1"><kbd className="rounded border border-[var(--line)] px-1">⌘</kbd><kbd className="rounded border border-[var(--line)] px-1">K</kbd></span></div>
-      </div>
-    </div>
+      <span className="text-lg font-bold tracking-[-.05em]">finsight</span>
+    </span>
   );
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-  const isPublic = pathname === "/" || pathname === "/login" || pathname.startsWith("/pricing") || pathname.startsWith("/features") || pathname.startsWith("/faq") || pathname.startsWith("/privacy") || pathname.startsWith("/terms");
-  const current = pageMeta[pathname] ?? { title: "FinSight", description: "Your financial operating system." };
-
+  const router = useRouter();
+  const { state, ready, update, notice } = useFinance();
+  const [mobile, setMobile] = useState(false);
+  const [palette, setPalette] = useState(false);
+  const [notifications, setNotifications] = useState(false);
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState(0);
+  const isPublic = publicPaths.includes(pathname);
+  const summary = summarize(state);
+  const signals = state.notifications
+    ? [
+        {
+          id: "demo",
+          title: "Your demo workspace is ready",
+          copy: "Changes are saved on this browser. Use Settings to export or clear them.",
+          href: "/settings",
+        },
+        ...summary.budgets
+          .filter((budget) => budget.spent > budget.limit)
+          .map((budget) => ({
+            id: `budget-${budget.id}`,
+            title: `${budget.category} is over budget`,
+            copy: "Review the transactions or adjust your monthly limit.",
+            href: "/budgets",
+          })),
+      ].filter((signal) => !state.dismissed.includes(signal.id))
+    : [];
+  const results = actions.filter((action) =>
+    action.label.toLowerCase().includes(query.toLowerCase()),
+  );
   useEffect(() => {
-    const saved = window.localStorage.getItem("finsight-theme") as "light" | "dark" | null;
-    const next = saved ?? "light";
-    setTheme(next);
-    document.documentElement.dataset.theme = next;
-  }, []);
-
+    document.documentElement.dataset.theme = isPublic ? "light" : state.theme;
+  }, [state.theme, isPublic]);
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem("finsight-theme", theme);
-  }, [theme]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setPaletteOpen(true); }
-      if (event.key === "Escape") { setPaletteOpen(false); setMobileOpen(false); setNotificationsOpen(false); }
+    const onKey = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "k" &&
+        !isPublic
+      ) {
+        event.preventDefault();
+        setPalette((open) => !open);
+      }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isPublic]);
+  useEffect(() => {
+    setMobile(false);
+    setPalette(false);
+  }, [pathname]);
   if (isPublic) return <>{children}</>;
-
+  const go = (href: string) => {
+    setPalette(false);
+    router.push(href);
+  };
+  const navigation = (
+    <>
+      <Link href="/dashboard" className="block px-2" aria-label="FinSight home">
+        <BrandMark />
+      </Link>
+      <div className="mt-8 flex items-center gap-3 rounded-2xl border bg-[var(--surface-raised)] p-3">
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--mint)] text-sm font-semibold text-[var(--mint-deep)]">
+          {state.name.charAt(0).toUpperCase()}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-xs font-semibold">
+            {state.name}’s workspace
+          </p>
+          <p className="mt-1 text-[11px] text-[var(--ink-soft)]">
+            Demo · stored on this device
+          </p>
+        </div>
+      </div>
+      <nav className="mt-8 flex-1" aria-label="Main navigation">
+        <p className="eyebrow mb-3 px-3">Your money</p>
+        <div className="space-y-1">
+          {nav.map(({ href, label, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              onClick={() => setMobile(false)}
+              aria-current={pathname === href ? "page" : undefined}
+              className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors ${pathname === href ? "bg-[var(--mint)] text-[var(--mint-deep)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink)]"}`}
+            >
+              <Icon size={17} />
+              {label}
+              {pathname === href && (
+                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--mint-deep)]" />
+              )}
+            </Link>
+          ))}
+        </div>
+      </nav>
+      <div className="mt-7 border-t pt-4">
+        <Link
+          href="/settings"
+          onClick={() => setMobile(false)}
+          className="flex items-center gap-3 rounded-xl p-3 text-sm text-[var(--ink-soft)] hover:bg-[var(--surface-muted)]"
+        >
+          <Settings2 size={17} /> Settings
+        </Link>
+        <div className="mt-3 rounded-2xl bg-[#101b16] p-4 text-white">
+          <p className="flex items-center gap-2 text-xs font-semibold text-[#b8f2d0]">
+            <Sparkles size={16} /> A clearer point of view
+          </p>
+          <p className="mt-3 text-xs leading-5 text-white/70">
+            Explore FinSight’s planned memberships and what comes next.
+          </p>
+          <Link
+            href="/pricing"
+            className="mt-3 inline-block text-xs font-semibold text-[#b8f2d0] hover:underline"
+          >
+            Explore plans ↗
+          </Link>
+        </div>
+        <div className="mt-4 flex items-center gap-3 p-2">
+          <span className="grid h-9 w-9 place-items-center rounded-full bg-[var(--cobalt-soft)] text-xs font-bold text-[var(--cobalt)]">
+            {state.name.slice(0, 2).toUpperCase()}
+          </span>
+          <div>
+            <p className="text-xs font-semibold">{state.name}</p>
+            <p className="mt-1 text-[11px] text-[var(--ink-soft)]">
+              Personal demo
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
   return (
-    <div className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
-      <div className="fixed inset-y-0 left-0 z-40 hidden lg:flex"><Sidebar pathname={pathname} /></div>
-      {mobileOpen && <div className="fixed inset-0 z-50 bg-black/20 lg:hidden" onClick={() => setMobileOpen(false)}><div className="h-full w-[286px] shadow-[var(--shadow-lg)]" onClick={(event) => event.stopPropagation()}><Sidebar pathname={pathname} onClose={() => setMobileOpen(false)} /></div></div>}
-      <div className="lg:pl-[252px]">
-        <header className="sticky top-0 z-30 flex h-[76px] items-center justify-between border-b border-[var(--line)] bg-[color:var(--canvas)]/90 px-4 backdrop-blur-xl sm:px-7 lg:px-10">
+    <div className="min-h-screen">
+      <a
+        href="#main-content"
+        className="fixed left-4 top-4 z-[100] -translate-y-24 rounded-xl bg-[var(--ink)] px-5 py-3 text-[var(--surface)] focus:translate-y-0"
+      >
+        Skip to content
+      </a>
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[252px] flex-col overflow-y-auto border-r bg-[var(--surface)] p-4 py-6 lg:flex print:hidden">
+        {navigation}
+      </aside>
+      <div className="lg:pl-[252px] print:pl-0">
+        <header className="sticky top-0 z-30 flex h-[76px] items-center justify-between gap-3 border-b bg-[var(--canvas)] px-4 sm:px-7 lg:px-10 print:hidden">
           <div className="flex min-w-0 items-center gap-3">
-            <button className="grid h-10 w-10 place-items-center rounded-[12px] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><span className="flex w-4 flex-col gap-1"><span className="h-px w-full bg-current" /><span className="h-px w-3/4 bg-current" /></span></button>
-            <div className="min-w-0"><h1 className="truncate text-[1.08rem] font-semibold tracking-[-0.03em] text-[var(--ink)]">{current.title}</h1><p className="hidden truncate text-xs text-[var(--ink-muted)] sm:block">{current.description}</p></div>
+            <button
+              onClick={() => setMobile(true)}
+              aria-label="Open navigation"
+              className="rounded-xl border bg-[var(--surface)] p-3 lg:hidden"
+            >
+              <Menu size={18} />
+            </button>
+            <div>
+              <h1 className="truncate text-base font-semibold tracking-tight">
+                {pathname === "/dashboard"
+                  ? `Welcome back, ${state.name}`
+                  : (nav.find((item) => item.href === pathname)?.label ??
+                    (pathname === "/settings" ? "Settings" : "Your workspace"))}
+              </h1>
+              <p className="mt-1 hidden text-xs text-[var(--ink-soft)] sm:block">
+                Your financial operating system.
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            <button onClick={() => setPaletteOpen(true)} className="hidden h-10 items-center gap-2 rounded-[12px] border border-[var(--line)] bg-[var(--surface)] px-3 text-xs text-[var(--ink-muted)] transition-colors hover:border-[var(--line-strong)] hover:text-[var(--ink)] md:flex" aria-label="Open command palette"><Search className="h-4 w-4" /><span>Search</span><kbd className="ml-2 rounded-md bg-[var(--surface-muted)] px-1.5 py-1 text-[0.62rem]">⌘ K</kbd></button>
-            <button onClick={() => setPaletteOpen(true)} className="grid h-10 w-10 place-items-center rounded-[12px] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] hover:text-[var(--ink)] md:hidden" aria-label="Open search"><Search className="h-4 w-4" /></button>
-            <div className="relative"><button onClick={() => setNotificationsOpen((open) => !open)} className="relative grid h-10 w-10 place-items-center rounded-[12px] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] hover:text-[var(--ink)]" aria-label="Open notifications"><Bell className="h-4 w-4" /><span className="absolute right-2.5 top-2 h-1.5 w-1.5 rounded-full bg-[var(--ember)] ring-2 ring-[var(--surface)]" /></button>{notificationsOpen && <div className="absolute right-0 top-12 w-72 rounded-[16px] border border-[var(--line)] bg-[var(--surface)] p-3 shadow-[var(--shadow-lg)]"><div className="flex items-center justify-between px-2 py-1"><p className="text-sm font-semibold text-[var(--ink)]">Notifications</p><span className="rounded-full bg-[var(--mint)] px-2 py-0.5 text-[0.62rem] font-bold text-[var(--mint-deep)]">2 new</span></div><div className="mt-2 space-y-1"><div className="rounded-[11px] bg-[var(--surface-muted)] p-3"><p className="text-xs font-semibold text-[var(--ink)]">You are on track</p><p className="mt-1 text-[0.68rem] leading-4 text-[var(--ink-muted)]">Your spending is 8% lower than this time last month.</p></div><div className="rounded-[11px] p-3 hover:bg-[var(--surface-muted)]"><p className="text-xs font-semibold text-[var(--ink)]">Rent is due in 3 days</p><p className="mt-1 text-[0.68rem] text-[var(--ink-muted)]">$1,850 · Bills & utilities</p></div></div></div>}</div>
-            <button onClick={() => setTheme(theme === "light" ? "dark" : "light")} className="hidden h-10 w-10 place-items-center rounded-[12px] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] hover:text-[var(--ink)] sm:grid" aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}</button>
-            <span className="hidden h-8 w-px bg-[var(--line)] sm:block" />
-            <span className="grid h-9 w-9 place-items-center rounded-full bg-[var(--cobalt-soft)] text-[0.68rem] font-bold text-[var(--cobalt)]">AS</span>
+            <span className="hidden rounded-full border bg-[var(--surface)] px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--ink-soft)] xl:block">
+              Demo data
+            </span>
+            <button
+              onClick={() => {
+                setPalette(true);
+                setQuery("");
+              }}
+              aria-label="Open command palette"
+              className="flex h-10 items-center gap-2 rounded-xl border bg-[var(--surface)] px-3 text-xs text-[var(--ink-soft)] hover:text-[var(--ink)]"
+            >
+              <Search size={16} />
+              <span className="hidden md:inline">Search</span>
+              <kbd className="ml-3 hidden rounded bg-[var(--surface-muted)] px-1.5 py-1 text-[10px] md:inline">
+                ⌘ K
+              </kbd>
+            </button>
+            <button
+              onClick={() => setNotifications(true)}
+              aria-label={`Notifications, ${signals.length} unread`}
+              className="relative rounded-xl border bg-[var(--surface)] p-3"
+            >
+              <Bell size={16} />
+              {!!signals.length && (
+                <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-[var(--ember)]" />
+              )}
+            </button>
+            <button
+              onClick={() => {
+                try {
+                  update((current) => ({
+                    ...current,
+                    theme: current.theme === "light" ? "dark" : "light",
+                  }));
+                } catch (error) {
+                  notice(String(error));
+                }
+              }}
+              aria-label={`Switch to ${state.theme === "light" ? "dark" : "light"} mode`}
+              className="rounded-xl border bg-[var(--surface)] p-3"
+            >
+              {state.theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+            </button>
           </div>
         </header>
-        <main className="min-h-[calc(100vh-76px)] px-4 pb-24 pt-7 sm:px-7 sm:pt-9 lg:px-10 lg:pb-10"><div className="mx-auto max-w-[1440px] page-enter">{children}</div></main>
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="min-h-[calc(100vh-76px)] px-4 pb-28 pt-7 outline-none sm:px-7 lg:px-10 lg:pb-10"
+        >
+          <div key={pathname} className="page-enter mx-auto max-w-[1440px]">
+            {ready ? (
+              children
+            ) : (
+              <div role="status" className="space-y-5">
+                <span className="sr-only">Loading workspace</span>
+                <div className="h-10 w-64 animate-pulse rounded-xl bg-[var(--surface-muted)]" />
+                <div className="grid gap-5 md:grid-cols-2">
+                  <div className="surface h-96 animate-pulse" />
+                  <div className="surface h-96 animate-pulse" />
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
       </div>
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[var(--line)] bg-[var(--surface)]/95 px-2 py-2 backdrop-blur-xl lg:hidden" aria-label="Mobile navigation">
-        {navGroups.flatMap((group) => group.items).slice(0, 5).map(({ href, label, icon: Icon }) => { const active = pathname === href; return <Link key={href} href={href} className={cn("flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-[0.62rem] font-semibold", active ? "bg-[var(--mint)] text-[var(--mint-deep)]" : "text-[var(--ink-muted)]")}><Icon className="h-4 w-4" /><span>{label}</span></Link>; })}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-[var(--surface)] px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 lg:hidden print:hidden"
+        aria-label="Mobile navigation"
+      >
+        {nav.slice(0, 5).map(({ href, label, icon: Icon }) => (
+          <Link
+            key={href}
+            href={href}
+            aria-current={pathname === href ? "page" : undefined}
+            className={`flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold ${pathname === href ? "bg-[var(--mint)] text-[var(--mint-deep)]" : "text-[var(--ink-soft)]"}`}
+          >
+            <Icon size={17} />
+            {label}
+          </Link>
+        ))}
       </nav>
-      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+      <FinanceDialog
+        open={mobile}
+        onClose={() => setMobile(false)}
+        title="Your workspace"
+        description="Navigate your finances."
+      >
+        <div className="flex flex-col">{navigation}</div>
+      </FinanceDialog>
+      <FinanceDialog
+        open={palette}
+        onClose={() => setPalette(false)}
+        title="Find your next step"
+        description="Search pages and actions. Use ↑ ↓ to select, Enter to open."
+      >
+        <label>
+          <span className="sr-only">Search actions</span>
+          <input
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setSelected(0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setSelected((current) =>
+                  Math.min(current + 1, results.length - 1),
+                );
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setSelected((current) => Math.max(0, current - 1));
+              }
+              if (event.key === "Enter" && results[selected]) {
+                event.preventDefault();
+                go(results[selected].href);
+              }
+            }}
+            className="control w-full px-3 text-sm"
+            placeholder="Search FinSight…"
+          />
+        </label>
+        <div className="mt-4 max-h-72 space-y-1 overflow-y-auto">
+          {results.map(({ href, label, icon: Icon }, index) => (
+            <button
+              key={href}
+              onClick={() => go(href)}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm ${selected === index ? "bg-[var(--mint)] text-[var(--mint-deep)]" : "hover:bg-[var(--surface-muted)]"}`}
+            >
+              <Icon size={17} />
+              {label}
+            </button>
+          ))}
+          {!results.length && (
+            <p className="py-6 text-sm text-[var(--ink-soft)]">
+              No matching actions. Try “budget” or “import”.
+            </p>
+          )}
+        </div>
+      </FinanceDialog>
+      <FinanceDialog
+        open={notifications}
+        onClose={() => setNotifications(false)}
+        title="Notifications"
+        description={`${signals.length} unread updates from this workspace.`}
+      >
+        <div className="space-y-3">
+          {signals.map((signal) => (
+            <div key={signal.id} className="rounded-xl border p-4">
+              <Link
+                href={signal.href}
+                onClick={() => setNotifications(false)}
+                className="text-sm font-semibold hover:underline"
+              >
+                {signal.title}
+              </Link>
+              <p className="mt-2 text-xs leading-5 text-[var(--ink-soft)]">
+                {signal.copy}
+              </p>
+              <button
+                onClick={() => {
+                  try {
+                    update((current) => ({
+                      ...current,
+                      dismissed: [...current.dismissed, signal.id],
+                    }));
+                  } catch (error) {
+                    notice(String(error));
+                  }
+                }}
+                className="mt-3 text-xs font-semibold text-[var(--mint-deep)]"
+              >
+                Mark as read
+              </button>
+            </div>
+          ))}
+          {!signals.length && (
+            <p className="py-8 text-center text-sm text-[var(--ink-soft)]">
+              You are all caught up.
+            </p>
+          )}
+        </div>
+      </FinanceDialog>
     </div>
   );
 }
-
-export { BrandMark };

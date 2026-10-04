@@ -1,39 +1,31 @@
 "use client";
-
-import { useEffect } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-interface ErrorProps {
+export default function ErrorPage({
+  error,
+  reset,
+}: {
   error: Error & { digest?: string };
   reset: () => void;
-}
-
-export default function GlobalError({ error, reset }: ErrorProps) {
-  useEffect(() => {
-    console.error("[GlobalError]", error);
-  }, [error]);
-
+}) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 p-8">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/15">
-        <AlertTriangle className="h-7 w-7 text-red-400" />
-      </div>
-      <div className="text-center">
-        <h2 className="text-lg font-semibold text-slate-100">Something went wrong</h2>
-        <p className="mt-1 text-sm text-slate-400 max-w-sm">
-          {error.message || "An unexpected error occurred. Please try again."}
+    <section className="surface mx-auto max-w-lg p-8 text-center">
+      <AlertTriangle className="mx-auto text-[var(--ember)]" size={28} />
+      <h2 className="mt-5 text-2xl font-semibold tracking-tight">
+        This view could not load.
+      </h2>
+      <p className="mt-3 text-sm leading-7 text-[var(--ink-soft)]">
+        Try opening it again. Your saved demo records are retained in this
+        browser.
+      </p>
+      {error.digest && (
+        <p className="mt-3 text-xs text-[var(--ink-soft)]">
+          Reference: {error.digest}
         </p>
-        {error.digest && (
-          <p className="mt-2 text-xs text-slate-600 font-mono">
-            ID: {error.digest}
-          </p>
-        )}
-      </div>
-      <Button onClick={reset} variant="outline">
-        <RefreshCw className="h-4 w-4 mr-2" />
-        Try again
+      )}
+      <Button variant="outline" onClick={reset} className="mt-6">
+        <RefreshCw size={15} className="mr-2" /> Try again
       </Button>
-    </div>
+    </section>
   );
 }

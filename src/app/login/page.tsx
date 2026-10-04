@@ -1,10 +1,25 @@
-import { Suspense } from "react";
-import { LoginForm } from "./login-form";
-
+import Link from "next/link";
+import { SitePage, SiteTitle } from "@/components/marketing/site-shell";
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="grid min-h-screen place-items-center bg-[var(--canvas)] text-sm text-[var(--ink-muted)]">Loading secure sign in…</div>}>
-      <LoginForm />
-    </Suspense>
+    <SitePage>
+      <SiteTitle
+        eyebrow="Welcome to the preview"
+        title="A clearer view is waiting."
+        description="The current FinSight demo does not require a hosted account. Your workspace is saved on this device."
+      />
+      <div className="mx-auto mt-10 max-w-lg text-center">
+        <Link
+          href="/dashboard"
+          className="inline-flex rounded-xl bg-[#101b16] px-6 py-4 text-sm font-semibold text-white"
+        >
+          Open the demo →
+        </Link>
+        <p className="mt-7 text-sm leading-7 text-[var(--ink-soft)]">
+          Hosted email, OAuth, passkey, and MFA sign-in are not available in
+          this preview.
+        </p>
+      </div>
+    </SitePage>
   );
 }

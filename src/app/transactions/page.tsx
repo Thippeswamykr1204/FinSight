@@ -1,564 +1,607 @@
 "use client";
 
-import { useState, useEffect, useCallback, useDeferredValue } from "react";
-import { Plus, Filter, Search, ChevronLeft, ChevronRight, Upload } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { Modal } from "@/components/ui/modal";
-import { TransactionForm } from "@/components/forms/transaction-form";
-import { TransactionRow } from "@/components/ui/transaction-row";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Download, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
+import { useFinance } from "@/components/finance/provider";
 import {
-  CATEGORIES,
-  CATEGORY_LABELS,
-  TRANSACTION_TYPE_LABELS,
-  TRANSACTION_TYPES,
-} from "@/lib/utils";
-import type {
-  Transaction,
-  PaginatedResponse,
-  TransactionImportResult,
-  TransactionType,
-} from "@/types";
+  Empty,
+  Field,
+  FinanceDialog,
+  FormError,
+  PageHeading,
+} from "@/components/finance/primitives";
+import { Button } from "@/components/ui/button";
+import {
+  categories,
+  categoryColors,
+  localDate,
+  money,
+  summarize,
+  toCents,
+  transactionSchema,
+  type Transaction,
+} from "@/lib/finance/model";
+import {
+  download,
+  exportCsv,
+  parseStatement,
+  uniqueImports,
+} from "@/lib/finance/import-export";
 
-export default function TransactionsPage() {
-  const [data, setData] = useState<PaginatedResponse<Transaction> | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
+function Transactions() {
+  const { state, update, notice } = useFinance();
+  const params = useSearchParams();
+  const [query, setQuery] = useState("");
+  const [type, setType] = useState("All");
+  const [category, setCategory] = useState("All");
   const [page, setPage] = useState(1);
-  const [type, setType] = useState<"" | TransactionType>("");
-  const [category, setCategory] = useState("");
-  const [search, setSearch] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [generatingRecurring, setGeneratingRecurring] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [previewingImport, setPreviewingImport] = useState(false);
-  const [skipDuplicateImports, setSkipDuplicateImports] = useState(true);
-  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
-  const [importPreview, setImportPreview] = useState<TransactionImportResult | null>(null);
-  const [actionMessage, setActionMessage] = useState("");
-  const deferredSearch = useDeferredValue(search.trim());
-  const LIMIT = 15;
-
-  const fetchTransactions = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(LIMIT),
-        ...(category && { category }),
-        ...(type && { type }),
-        ...(deferredSearch && { search: deferredSearch }),
-        ...(startDate && { startDate }),
-        ...(endDate && { endDate }),
-      });
-      const res = await fetch(`/api/transactions?${params}`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message);
-      setData(json.data);
-    } catch (e: any) {
-      setError(e.message || "Failed to load transactions");
-    } finally {
-      setLoading(false);
-    }
-  }, [page, type, category, deferredSearch, startDate, endDate]);
-
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Transaction | null>(null);
+  const [deleting, setDeleting] = useState<Transaction | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [preview, setPreview] = useState<Omit<Transaction, "id">[]>([]);
+  const [error, setError] = useState("");
+  const [importAccount, setImportAccount] = useState(
+    state.accounts[0]?.id ?? "",
+  );
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
-    fetchTransactions();
-  }, [fetchTransactions]);
-
-  const hasActiveFilters = Boolean(type || category || search || startDate || endDate);
-
-  function clearFilters() {
-    setCategory("");
-    setType("");
-    setSearch("");
-    setStartDate("");
-    setEndDate("");
+    setOpen(params.get("action") === "add");
+    setImportOpen(params.get("action") === "import");
+    if (params.get("category")) setCategory(params.get("category")!);
+  }, [params]);
+  const filtered = useMemo(
+    () =>
+      state.transactions
+        .filter(
+          (transaction) =>
+            (type === "All" || transaction.type === type) &&
+            (category === "All" || transaction.category === category) &&
+            `${transaction.merchant} ${transaction.note}`
+              .toLowerCase()
+              .includes(query.toLowerCase()),
+        )
+        .sort((a, b) => b.date.localeCompare(a.date)),
+    [state.transactions, type, category, query],
+  );
+  const summary = summarize(state);
+  const visible = filtered.slice((page - 1) * 12, page * 12);
+  const unique = uniqueImports(state.transactions, preview);
+  function filter(change: () => void) {
+    change();
     setPage(1);
   }
-
-  async function generateRecurringTransactions() {
-    setGeneratingRecurring(true);
-    setActionMessage("");
+  function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const form = new FormData(event.currentTarget);
     try {
-      const res = await fetch("/api/transactions/recurring/generate", {
-        method: "POST",
+      const transaction = transactionSchema.parse({
+        id: editing?.id ?? crypto.randomUUID(),
+        merchant: form.get("merchant"),
+        amount: toCents(String(form.get("amount"))),
+        date: form.get("date"),
+        type: form.get("type"),
+        category: form.get("category"),
+        accountId: form.get("account"),
+        note: form.get("note"),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message || "Failed to generate recurring transactions");
-
-      const createdCount = json.data?.createdCount ?? 0;
-      setActionMessage(
-        createdCount > 0
-          ? `${createdCount} recurring transaction${createdCount === 1 ? "" : "s"} generated.`
-          : "No recurring transactions were due right now."
+      update((current) => ({
+        ...current,
+        transactions: editing
+          ? current.transactions.map((item) =>
+              item.id === editing.id ? transaction : item,
+            )
+          : [transaction, ...current.transactions],
+      }));
+      setOpen(false);
+      setEditing(null);
+      notice(
+        editing ? "Transaction updated." : "Transaction saved to this browser.",
       );
-      fetchTransactions();
-    } catch (e: any) {
-      setActionMessage(e.message || "Failed to generate recurring transactions");
-    } finally {
-      setGeneratingRecurring(false);
-    }
-  }
-
-  async function submitImport(dryRun: boolean) {
-    if (!selectedImportFile) {
-      setActionMessage("Choose a CSV file before importing.");
-      return null;
-    }
-
-    const csv = await selectedImportFile.text();
-    const res = await fetch("/api/transactions/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ csv, dryRun, skipDuplicates: skipDuplicateImports }),
-    });
-    const json = await res.json();
-
-    if (!res.ok) {
-      throw new Error(json.message || "Failed to import transactions");
-    }
-
-    return json.data as TransactionImportResult;
-  }
-
-  async function previewImportTransactions() {
-    setPreviewingImport(true);
-    setActionMessage("");
-    try {
-      const preview = await submitImport(true);
-      if (!preview) return;
-      setImportPreview(preview);
-      setActionMessage(
-        `${preview.rows.length} preview row${preview.rows.length === 1 ? "" : "s"} ready. ${preview.duplicateCount} duplicate${preview.duplicateCount === 1 ? "" : "s"} detected.`
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Check the transaction fields.",
       );
-    } catch (e: any) {
-      setActionMessage(e.message || "Failed to preview transactions");
-    } finally {
-      setPreviewingImport(false);
     }
   }
-
-  async function importTransactionsFromCsv() {
-    if (!selectedImportFile) {
-      setActionMessage("Choose a CSV file before importing.");
+  async function readFile(file?: File) {
+    setError("");
+    setPreview([]);
+    if (!file) return;
+    if (file.size > 2_000_000) {
+      setError("Choose a file under 2 MB.");
       return;
     }
-
-    setImporting(true);
-    setActionMessage("");
+    setBusy(true);
     try {
-      const result = await submitImport(false);
-      if (!result) return;
-
-      const importedCount = result.importedCount ?? 0;
-      setActionMessage(
-        `${importedCount} transaction${importedCount === 1 ? "" : "s"} imported from ${selectedImportFile.name}.${result.duplicateCount > 0 ? ` ${result.duplicateCount} duplicate${result.duplicateCount === 1 ? "" : "s"} skipped.` : ""}`
+      setPreview(
+        parseStatement(
+          await file.text(),
+          file.name,
+          importAccount || state.accounts[0]?.id || "",
+        ),
       );
-      setSelectedImportFile(null);
-      setImportPreview(null);
-      setImportOpen(false);
-      setPage(1);
-      fetchTransactions();
-    } catch (e: any) {
-      setActionMessage(e.message || "Failed to import transactions");
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not read the statement.",
+      );
     } finally {
-      setImporting(false);
+      setBusy(false);
     }
   }
-
-  function handleTransactionChanged(updatedTransaction: Transaction) {
-    setData((current) => {
-      if (!current) return current;
-
-      return {
-        ...current,
-        data: current.data.map((transaction) =>
-          transaction.id === updatedTransaction.id ? updatedTransaction : transaction
-        ),
-      };
-    });
-    fetchTransactions();
-  }
-
-  function handleTransactionDeleted(deletedId: string) {
-    setData((current) => {
-      if (!current) return current;
-
-      const nextData = current.data.filter((transaction) => transaction.id !== deletedId);
-      return {
-        ...current,
-        data: nextData,
-        total: Math.max(0, current.total - 1),
-        totalPages: Math.max(1, Math.ceil(Math.max(0, current.total - 1) / current.limit)),
-      };
-    });
-    fetchTransactions();
-  }
-
   return (
-    <div className="space-y-5 max-w-5xl mx-auto">
-      {/* Toolbar */}
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3">
-          <div className="flex-1 relative w-full lg:max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-            <Input
-              type="text"
-              placeholder="Search descriptions..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              className="pl-9"
-            />
-          </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Filter className="h-4 w-4 text-slate-500 shrink-0" />
-            <Select
-              value={type}
-              onChange={(e) => {
-                setType(e.target.value as "" | TransactionType);
-                setCategory("");
-                setPage(1);
-              }}
-              className="w-full sm:w-36"
-            >
-              <option value="">All Types</option>
-              {TRANSACTION_TYPES.map((item) => (
-                <option key={item} value={item}>{TRANSACTION_TYPE_LABELS[item]}</option>
-              ))}
-            </Select>
-            <Select
-              value={category}
-              onChange={(e) => {
-                setCategory(e.target.value);
-                setPage(1);
-              }}
-              className="w-full sm:w-44"
-            >
-              <option value="">All Categories</option>
-              {CATEGORIES.filter((cat) => {
-                if (!type) return true;
-                return type === "INCOME"
-                  ? ["SALARY", "FREELANCE", "INVESTMENTS", "OTHER_INCOME"].includes(cat)
-                  : ["FOOD", "RENT", "TRAVEL", "SHOPPING", "ENTERTAINMENT"].includes(cat);
-              }).map((cat) => (
-                <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="flex w-full lg:w-auto gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setImportOpen(true)}
-              className="w-full lg:w-auto"
-            >
-              <Upload className="h-4 w-4 mr-2" />
-              Import CSV
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={generateRecurringTransactions}
-              loading={generatingRecurring}
-              className="w-full lg:w-auto"
-            >
-              Generate Recurring
-            </Button>
-            <Button onClick={() => setAddOpen(true)} className="w-full lg:w-auto shrink-0">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Transaction
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
-          <div className="w-full sm:w-44">
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">From</p>
-            <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-
-          <div className="w-full sm:w-44">
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">To</p>
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => {
-                setEndDate(e.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-
-          <div className="flex w-full sm:w-auto gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={clearFilters}
-              disabled={!hasActiveFilters}
-              className="w-full sm:w-auto"
-            >
-              Clear Filters
-            </Button>
-          </div>
-        </div>
-        {actionMessage && (
-          <div className="rounded-lg border border-slate-700/50 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
-            {actionMessage}
-          </div>
-        )}
-      </div>
-
-      {/* Table */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>All Transactions</CardTitle>
-              <CardDescription>
-                {data ? `${data.total} total transactions` : "Loading..."}
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {error && (
-            <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-3 mb-4">
-              <p className="text-sm text-red-400">{error}</p>
-            </div>
-          )}
-
-          {loading ? (
-            <div className="space-y-2">
-              {[...Array(6)].map((_, i) => (
-                <Skeleton key={i} className="h-14 rounded-xl" />
-              ))}
-            </div>
-          ) : !data?.data.length ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <div className="h-12 w-12 rounded-2xl bg-slate-800 flex items-center justify-center text-2xl">
-                📭
-              </div>
-              <p className="text-slate-400 text-sm">
-                {hasActiveFilters ? "No matching transactions" : "No transactions yet"}
-              </p>
-              {!hasActiveFilters && (
-                <Button size="sm" onClick={() => setAddOpen(true)}>
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  Add your first
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {data.data.map((t) => (
-                <TransactionRow
-                  key={t.id}
-                  transaction={t}
-                  onChanged={handleTransactionChanged}
-                  onDeleted={handleTransactionDeleted}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Pagination */}
-          {data && data.totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700/50">
-              <p className="text-xs text-slate-500">
-                Page {data.page} of {data.totalPages}
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
-                  disabled={page === data.totalPages}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Add modal */}
-      <Modal
-        open={importOpen}
-        onClose={() => {
-          setImportOpen(false);
-          setSelectedImportFile(null);
-          setImportPreview(null);
-        }}
-        title="Import Transactions"
-        description="Upload a CSV with amount, date, description, type, and category columns."
-        className="max-w-2xl"
+    <div className="space-y-6">
+      <PageHeading
+        eyebrow="Money in motion"
+        title="Every move, in perspective."
+        description="Search your history, review a detail, or add what is missing."
       >
-        <div className="space-y-4">
-          <div className="rounded-xl border border-slate-700/50 bg-slate-800/40 p-4 text-sm text-slate-300">
-            <p className="font-medium text-slate-100">Expected headers</p>
-            <p className="mt-2 text-xs text-slate-400">
-              `amount,date,description,type,category,recurrenceFrequency`
-            </p>
-            <p className="mt-3 text-xs text-slate-500">
-              `recurrenceFrequency` is optional. Supported values: `MONTHLY`.
-              Categories can use either the enum values like `FOOD` or the visible labels like `Food & Dining`.
+        <Button
+          variant="outline"
+          onClick={() => {
+            setError("");
+            setPreview([]);
+            setImportOpen(true);
+          }}
+        >
+          <Upload size={15} className="mr-2" /> Import
+        </Button>
+        <Button
+          onClick={() => {
+            setEditing(null);
+            setError("");
+            setOpen(true);
+          }}
+        >
+          <Plus size={15} className="mr-2" /> Add transaction
+        </Button>
+      </PageHeading>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {[
+          ["Income this month", summary.income],
+          ["Spent this month", summary.expenses],
+          ["Net cash flow", summary.saved],
+        ].map(([label, value]) => (
+          <div key={label} className="surface p-5">
+            <p className="eyebrow">{label}</p>
+            <p className="mt-5 text-3xl font-semibold tracking-tight tabular-nums">
+              {money(Number(value), state.locale)}
             </p>
           </div>
-
-          <div className="space-y-1.5">
-            <p className="text-sm font-medium text-slate-200">CSV file</p>
-            <Input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(e) => {
-                setSelectedImportFile(e.target.files?.[0] ?? null);
-                setImportPreview(null);
-              }}
+        ))}
+      </div>
+      <section className="surface overflow-hidden">
+        <div className="flex flex-col flex-wrap gap-3 border-b p-4 sm:flex-row sm:items-center sm:p-6">
+          <div className="flex rounded-xl bg-[var(--surface-muted)] p-1">
+            {["All", "income", "expense"].map((value) => (
+              <button
+                key={value}
+                onClick={() => filter(() => setType(value))}
+                aria-pressed={type === value}
+                className={`rounded-lg px-4 py-2 text-xs font-semibold ${type === value ? "bg-[var(--surface)] shadow-sm" : "text-[var(--ink-soft)]"}`}
+              >
+                {value === "All"
+                  ? "All activity"
+                  : value === "income"
+                    ? "Income"
+                    : "Expenses"}
+              </button>
+            ))}
+          </div>
+          <label className="relative sm:ml-auto">
+            <span className="sr-only">Search transactions</span>
+            <Search
+              size={16}
+              className="absolute left-3 top-3.5 text-[var(--ink-muted)]"
             />
-            <p className="text-xs text-slate-500">
-              {selectedImportFile ? `Selected: ${selectedImportFile.name}` : "Choose a bank export or transaction CSV file."}
-            </p>
-          </div>
-
-          <label className="flex items-center gap-3 rounded-xl border border-slate-700/50 bg-slate-800/30 px-4 py-3 text-sm text-slate-300">
             <input
-              type="checkbox"
-              checked={skipDuplicateImports}
-              onChange={(e) => setSkipDuplicateImports(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-emerald-500"
+              value={query}
+              onChange={(event) => filter(() => setQuery(event.target.value))}
+              className="control w-full pl-9 pr-3 text-sm"
+              placeholder="Search transactions"
             />
-            Skip duplicate transactions during import
           </label>
-
-          <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Sample row</p>
-            <pre className="mt-2 overflow-x-auto text-xs text-slate-300">
-{`amount,date,description,category,recurrenceFrequency
-250.50,2026-03-29,Coffee,EXPENSE,FOOD,
-1299,2026-03-01,Netflix subscription,EXPENSE,Entertainment,MONTHLY
-85000,2026-03-01,Monthly salary,INCOME,Salary,MONTHLY`}
-            </pre>
-          </div>
-
-          {importPreview && (
-            <div className="space-y-3 rounded-xl border border-slate-700/50 bg-slate-900/50 p-4">
-              <div className="flex flex-wrap gap-3 text-xs text-slate-400">
-                <span>{importPreview.importedCount} rows ready to import</span>
-                <span>{importPreview.duplicateCount} duplicates detected</span>
-                <span>{importPreview.skipDuplicates ? "Duplicates will be skipped" : "Duplicates will be imported"}</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-xs text-slate-300">
-                  <thead className="text-slate-500">
-                    <tr>
-                      <th className="pb-2 pr-4 font-medium">Row</th>
-                      <th className="pb-2 pr-4 font-medium">Date</th>
-                      <th className="pb-2 pr-4 font-medium">Description</th>
-                      <th className="pb-2 pr-4 font-medium">Type</th>
-                      <th className="pb-2 pr-4 font-medium">Category</th>
-                      <th className="pb-2 pr-4 font-medium">Amount</th>
-                      <th className="pb-2 font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {importPreview.rows.map((row) => (
-                      <tr key={`${row.rowNumber}-${row.description}`} className="border-t border-slate-800">
-                        <td className="py-2 pr-4 text-slate-500">{row.rowNumber}</td>
-                        <td className="py-2 pr-4">{new Date(row.date).toLocaleDateString("en-IN")}</td>
-                        <td className="py-2 pr-4">{row.description}</td>
-                        <td className="py-2 pr-4">{TRANSACTION_TYPE_LABELS[row.type]}</td>
-                        <td className="py-2 pr-4">{CATEGORY_LABELS[row.category]}</td>
-                        <td className="py-2 pr-4">₹{row.amount.toLocaleString("en-IN")}</td>
-                        <td className="py-2">
-                          <span className={row.duplicate ? "text-amber-400" : "text-emerald-400"}>
-                            {row.duplicate ? "Duplicate" : "New"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-3 pt-2">
+          <select
+            aria-label="Filter by category"
+            value={category}
+            onChange={(event) => filter(() => setCategory(event.target.value))}
+            className="control px-3 text-sm"
+          >
+            <option value="All">All categories</option>
+            {categories.map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-[var(--surface-raised)] text-xs text-[var(--ink-soft)]">
+              <tr>
+                <th className="px-5 py-3 font-medium">Transaction</th>
+                <th className="hidden px-4 py-3 font-medium md:table-cell">
+                  Category
+                </th>
+                <th className="hidden px-4 py-3 font-medium sm:table-cell">
+                  Date
+                </th>
+                <th className="px-4 py-3 text-right font-medium">Amount</th>
+                <th className="px-4 py-3">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((transaction) => (
+                <tr
+                  key={transaction.id}
+                  className="border-t hover:bg-[var(--surface-raised)]"
+                >
+                  <td className="max-w-[230px] px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <span className="hidden h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--surface-muted)] text-xs font-bold sm:grid">
+                        {transaction.merchant.slice(0, 2).toUpperCase()}
+                      </span>
+                      <div className="min-w-0">
+                        <button
+                          onClick={() => {
+                            setEditing(transaction);
+                            setError("");
+                            setOpen(true);
+                          }}
+                          className="block max-w-full truncate text-left font-semibold hover:text-[var(--mint-deep)]"
+                        >
+                          {transaction.merchant}
+                        </button>
+                        <p className="mt-1 truncate text-xs text-[var(--ink-soft)]">
+                          {
+                            state.accounts.find(
+                              (account) => account.id === transaction.accountId,
+                            )?.name
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="hidden px-4 py-4 md:table-cell">
+                    <span
+                      className="mr-2 inline-block h-1.5 w-1.5 rounded-full"
+                      style={{
+                        background: categoryColors[transaction.category],
+                      }}
+                    />
+                    {transaction.category}
+                  </td>
+                  <td className="hidden whitespace-nowrap px-4 py-4 text-xs text-[var(--ink-soft)] sm:table-cell">
+                    {new Intl.DateTimeFormat(state.locale, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    }).format(new Date(`${transaction.date}T12:00:00`))}
+                  </td>
+                  <td
+                    className={`whitespace-nowrap px-4 py-4 text-right font-semibold tabular-nums ${transaction.type === "income" ? "text-[var(--mint-deep)]" : ""}`}
+                  >
+                    {transaction.type === "income" ? "+" : "−"}
+                    {money(transaction.amount, state.locale)}
+                  </td>
+                  <td className="px-2 py-3">
+                    <button
+                      aria-label={`Delete ${transaction.merchant}`}
+                      onClick={() => setDeleting(transaction)}
+                      className="rounded-lg p-2 text-[var(--ink-soft)] hover:bg-red-100/50 hover:text-[var(--danger)]"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!filtered.length && (
+          <Empty
+            title="No matching money moves"
+            description="Try a different search or add your first transaction."
+          >
             <Button
-              type="button"
               variant="outline"
               onClick={() => {
-                setImportOpen(false);
-                setSelectedImportFile(null);
-                setImportPreview(null);
+                setQuery("");
+                setCategory("All");
+                setType("All");
               }}
-              className="flex-1"
             >
-              Cancel
+              Clear filters
+            </Button>
+          </Empty>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t p-5 text-xs text-[var(--ink-soft)]">
+          <span>
+            {filtered.length} transactions · page {page} of{" "}
+            {Math.max(1, Math.ceil(filtered.length / 12))}
+          </span>
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage(page - 1)}
+            >
+              Previous
             </Button>
             <Button
-              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={page * 12 >= filtered.length}
+              onClick={() => setPage(page + 1)}
+            >
+              Next
+            </Button>
+            <Button
               variant="outline"
-              onClick={previewImportTransactions}
-              loading={previewingImport}
-              className="flex-1"
+              size="sm"
+              onClick={() =>
+                download(
+                  exportCsv(filtered),
+                  "finsight-transactions.csv",
+                  "text/csv;charset=utf-8",
+                )
+              }
             >
-              Preview Import
-            </Button>
-            <Button
-              type="button"
-              onClick={importTransactionsFromCsv}
-              loading={importing}
-              className="flex-1"
-            >
-              Import Transactions
+              <Download size={14} className="mr-2" /> Export CSV
             </Button>
           </div>
         </div>
-      </Modal>
-
-      <Modal
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        title="Add Transaction"
-        description="Record a new expense"
+      </section>
+      <FinanceDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={editing ? "Edit transaction" : "Add a transaction"}
+        description="Demo changes are saved on this device. All amounts are in USD."
       >
-        <TransactionForm
-          onSuccess={() => {
-            setAddOpen(false);
-            fetchTransactions();
-          }}
-          onCancel={() => setAddOpen(false)}
-        />
-      </Modal>
+        {!state.accounts.length ? (
+          <Empty
+            title="Add an account first"
+            description="An account keeps your balances and money movements together."
+          >
+            <a href="/accounts" className="text-[var(--mint-deep)]">
+              Go to accounts →
+            </a>
+          </Empty>
+        ) : (
+          <form
+            key={editing?.id ?? "new"}
+            onSubmit={save}
+            className="space-y-4"
+          >
+            <Field label="Merchant or source">
+              <input
+                required
+                maxLength={120}
+                name="merchant"
+                defaultValue={editing?.merchant}
+                className="control px-3"
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Amount (USD)">
+                <input
+                  name="amount"
+                  required
+                  inputMode="decimal"
+                  defaultValue={
+                    editing ? (editing.amount / 100).toFixed(2) : ""
+                  }
+                  className="control px-3"
+                />
+              </Field>
+              <Field label="Type">
+                <select
+                  name="type"
+                  defaultValue={editing?.type ?? "expense"}
+                  className="control px-3"
+                >
+                  <option value="expense">Expense</option>
+                  <option value="income">Income</option>
+                </select>
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Date">
+                <input
+                  required
+                  type="date"
+                  name="date"
+                  defaultValue={editing?.date ?? localDate()}
+                  className="control min-w-0 px-3"
+                />
+              </Field>
+              <Field label="Category">
+                <select
+                  name="category"
+                  defaultValue={editing?.category ?? "Food & dining"}
+                  className="control px-3"
+                >
+                  {categories.map((value) => (
+                    <option key={value}>{value}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <Field label="Account">
+              <select
+                name="account"
+                defaultValue={editing?.accountId ?? state.accounts[0]?.id}
+                className="control px-3"
+              >
+                {state.accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Note (optional)">
+              <input
+                name="note"
+                maxLength={500}
+                defaultValue={editing?.note}
+                className="control px-3"
+              />
+            </Field>
+            <FormError error={error} />
+            <Button type="submit" className="h-11 w-full">
+              <Pencil size={14} className="mr-2" /> Save transaction
+            </Button>
+          </form>
+        )}
+      </FinanceDialog>
+      <FinanceDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        title="Delete transaction?"
+        description={`Remove ${deleting?.merchant ?? "this transaction"} and recalculate your balances.`}
+      >
+        <FormError error={error} />
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setDeleting(null)}>
+            Keep transaction
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              try {
+                update((current) => ({
+                  ...current,
+                  transactions: current.transactions.filter(
+                    (transaction) => transaction.id !== deleting?.id,
+                  ),
+                }));
+                setDeleting(null);
+                setPage(1);
+                notice("Transaction deleted.");
+              } catch (caught) {
+                setError(String(caught));
+              }
+            }}
+          >
+            Delete transaction
+          </Button>
+        </div>
+      </FinanceDialog>
+      <FinanceDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Import a statement"
+        description="Preview CSV or OFX transactions before saving. Duplicate rows are skipped."
+      >
+        <div className="space-y-4">
+          <p className="rounded-xl bg-[var(--surface-muted)] p-3 text-xs leading-6">
+            CSV columns: <code>date,merchant,amount,type,category</code>
+            <br />
+            Date format: YYYY-MM-DD. Amounts use decimals (123.45). USD only.
+          </p>
+          <Field label="Destination account">
+            <select
+              value={importAccount || state.accounts[0]?.id || ""}
+              onChange={(event) => {
+                setImportAccount(event.target.value);
+                setPreview([]);
+              }}
+              className="control px-3"
+            >
+              {state.accounts.map((account) => (
+                <option value={account.id} key={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Statement file (up to 2 MB)">
+            <input
+              disabled={!state.accounts.length || busy}
+              type="file"
+              accept=".csv,.ofx"
+              onChange={(event) => void readFile(event.target.files?.[0])}
+              className="control max-w-full p-3 text-xs"
+            />
+          </Field>
+          <Button
+            variant="link"
+            size="sm"
+            onClick={() =>
+              download(
+                `date,merchant,amount,type,category\n${localDate()},Corner shop,12.50,expense,Food & dining`,
+                "finsight-import-example.csv",
+                "text/csv",
+              )
+            }
+          >
+            Download sample CSV
+          </Button>
+          {busy && <p role="status">Reading statement…</p>}
+          <FormError error={error} />
+          {!!preview.length && (
+            <div className="rounded-xl border p-3 text-xs">
+              <p className="mb-3 font-semibold">
+                {unique.length} new · {preview.length - unique.length}{" "}
+                duplicates skipped
+              </p>
+              <div className="max-h-40 overflow-y-auto">
+                {preview.slice(0, 30).map((row, index) => (
+                  <p
+                    key={index}
+                    className="flex justify-between gap-3 border-t py-2"
+                  >
+                    <span>
+                      {row.date} · {row.merchant}
+                    </span>
+                    <span>{money(row.amount)}</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+          <Button
+            disabled={!unique.length || busy}
+            className="w-full"
+            onClick={() => {
+              try {
+                update((current) => ({
+                  ...current,
+                  transactions: [
+                    ...unique.map((row) => ({
+                      ...row,
+                      id: crypto.randomUUID(),
+                    })),
+                    ...current.transactions,
+                  ],
+                }));
+                setImportOpen(false);
+                notice(`${unique.length} transactions imported.`);
+                setPreview([]);
+              } catch (caught) {
+                setError(String(caught));
+              }
+            }}
+          >
+            Import {unique.length || ""} transactions
+          </Button>
+        </div>
+      </FinanceDialog>
     </div>
+  );
+}
+export default function TransactionsPage() {
+  return (
+    <Suspense fallback={<p>Loading transactions…</p>}>
+      <Transactions />
+    </Suspense>
   );
 }

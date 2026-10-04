@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AUTH_COOKIE_NAME, createSessionToken, getSessionCookieOptions, isAuthConfigured } from "@/lib/auth";
+import {
+  AUTH_COOKIE_NAME,
+  createSessionToken,
+  getSessionCookieOptions,
+  isAuthConfigured,
+} from "@/lib/auth";
 import { apiError } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
@@ -16,7 +21,10 @@ export async function POST(request: NextRequest) {
     }
 
     const token = await createSessionToken();
-    const response = NextResponse.json({ success: true, data: { authenticated: true } }, { status: 200 });
+    const response = NextResponse.json(
+      { success: true, data: { authenticated: true } },
+      { status: 200 },
+    );
     response.cookies.set(AUTH_COOKIE_NAME, token, getSessionCookieOptions());
     return response;
   } catch (error) {

@@ -45,7 +45,8 @@ export async function GET(request: NextRequest) {
       return apiError("Invalid query parameters", 400);
     }
 
-    const { page, limit, type, category, search, startDate, endDate } = parsed.data;
+    const { page, limit, type, category, search, startDate, endDate } =
+      parsed.data;
     const skip = (page - 1) * limit;
 
     const where: Prisma.TransactionWhereInput = {
@@ -113,7 +114,10 @@ export async function POST(request: NextRequest) {
     const parsed = transactionSchema.safeParse(body);
 
     if (!parsed.success) {
-      const errors = parsed.error.flatten().fieldErrors as Record<string, string[]>;
+      const errors = parsed.error.flatten().fieldErrors as Record<
+        string,
+        string[]
+      >;
       return apiError("Validation failed", 422, errors);
     }
 
@@ -121,7 +125,9 @@ export async function POST(request: NextRequest) {
       data: {
         ...parsed.data,
         date: new Date(parsed.data.date),
-        recurringSeriesId: parsed.data.recurrenceFrequency ? randomUUID() : null,
+        recurringSeriesId: parsed.data.recurrenceFrequency
+          ? randomUUID()
+          : null,
       },
     });
 

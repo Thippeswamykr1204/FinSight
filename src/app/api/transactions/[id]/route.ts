@@ -6,7 +6,7 @@ import { apiResponse, apiError } from "@/lib/utils";
 import { invalidateCache } from "@/lib/redis";
 import type { Transaction } from "@/types";
 
-type RouteParams = { params: { id: string } };
+type RouteParams = { params: Promise<{ id: string }> };
 
 function serializeTransaction(transaction: {
   id: string;
@@ -29,9 +29,10 @@ function serializeTransaction(transaction: {
 }
 
 export async function GET(_: NextRequest, { params }: RouteParams) {
+  const { id } = await params;
   try {
     const transaction = await prisma.transaction.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!transaction) return apiError("Transaction not found", 404);
@@ -44,9 +45,10 @@ export async function GET(_: NextRequest, { params }: RouteParams) {
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  const { id } = await params;
   try {
     const existing = await prisma.transaction.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!existing) return apiError("Transaction not found", 404);
@@ -55,18 +57,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const parsed = transactionUpdateSchema.safeParse(body);
 
     if (!parsed.success) {
-      const errors = parsed.error.flatten().fieldErrors as Record<string, string[]>;
+      const errors = parsed.error.flatten().fieldErrors as Record<
+        string,
+        string[]
+      >;
       return apiError("Validation failed", 422, errors);
     }
 
     const updated = await prisma.transaction.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         ...parsed.data,
         ...(parsed.data.date && { date: new Date(parsed.data.date) }),
         ...(parsed.data.recurrenceFrequency !== undefined && {
           recurringSeriesId: parsed.data.recurrenceFrequency
-            ? existing.recurringSeriesId ?? randomUUID()
+            ? (existing.recurringSeriesId ?? randomUUID())
             : null,
         }),
       },
@@ -86,14 +91,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 export async function DELETE(_: NextRequest, { params }: RouteParams) {
+  const { id } = await params;
   try {
     const existing = await prisma.transaction.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!existing) return apiError("Transaction not found", 404);
 
-    await prisma.transaction.delete({ where: { id: params.id } });
+    await prisma.transaction.delete({ where: { id } });
 
     await Promise.all([
       invalidateCache("transactions:*"),

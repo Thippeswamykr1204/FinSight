@@ -14,14 +14,14 @@ FinSight is a calm financial operating system for people who want the confidence
 
 ## Stack choice
 
-- **Web:** Next.js 14 App Router + React 18 + TypeScript. This keeps server-rendered marketing/SEO and an interactive product shell in one deployable unit.
+- **Web:** Next.js 15.5.27 App Router + React 18 + TypeScript. The vulnerable v14 baseline was upgraded. Server-rendered marketing and an interactive product shell stay in one deployable unit. Turbopack is used for development after the webpack dev server produced an intermittent cold-start hydration failure.
 - **Styling:** Tailwind CSS plus CSS variables in a local design-token layer. This is faster to evolve than a third-party theme and keeps the signature visual language owned by FinSight.
-- **Data:** Prisma + PostgreSQL, migrating toward workspace-scoped decimal money values and explicit provider/account entities. Existing aggregation and import code is retained where it is correct and moved behind domain boundaries.
+- **Data:** The verified demo uses a Zod-validated, browser-persisted ledger with integer minor-unit amounts. Prisma/PostgreSQL code is retained behind a disabled legacy API; workspace isolation and production persistence are a separate unfinished migration. The demo never silently falls back from live data to sample data.
 - **Charts:** Recharts for accessible responsive charts with custom wrappers and tooltip content.
 - **Validation:** Zod at API boundaries and shared TypeScript domain types.
-- **Caching/jobs:** Redis adapter with graceful local fallback; the job/event interfaces are defined now so provider webhooks and digest jobs can be added without coupling pages to infrastructure.
-- **Auth/billing/connectivity:** provider interfaces for Auth.js/managed auth, Stripe, Plaid/TrueLayer-style aggregation, transactional email, and web push. Demo mode works without any provider credentials.
-- **Quality:** ESLint, TypeScript strict mode, Vitest-ready unit boundaries, Playwright-ready critical flows, Docker Compose, GitHub Actions, security headers, health checks, and operational docs.
+- **Caching/jobs (planned):** retain Redis for the future hosted cache and rate limiter. Add durable jobs and an outbox before integrating bank webhooks or email digests; those interfaces are not implemented yet.
+- **Auth/billing/connectivity (planned):** implement provider adapters for managed auth, Stripe, bank aggregation, transactional email, and web push. Demo mode currently works without provider credentials and has no live connection to these services.
+- **Quality:** ESLint, TypeScript strict mode, Vitest domain tests with coverage thresholds, Playwright critical flows, axe accessibility checks, security headers, and health checks. Docker Compose, CI and operational documentation follow in the delivery checkpoint.
 
 ## Architecture
 
@@ -78,11 +78,26 @@ infra/                  Docker, CI, Terraform starter configuration
 
 - [x] **Phase 0 — Baseline review:** inspect the repository, record strengths/gaps, and capture the initial toolchain failure caused by missing installed dependencies.
 - [x] **Phase 1 — Foundation:** install dependencies, establish a clean design-token layer, introduce the responsive app shell, metadata, error/loading states, PWA assets, and public route structure.
-- [ ] **Phase 2 — Product core:** rebuild dashboard, transactions, budgets, insights, goals, net worth, and forecast surfaces with interactive charts, filters, animations, keyboard support, and mobile layouts.
-- [ ] **Phase 3 — Activation and monetization:** ship onboarding, workspace switcher, settings, plan cards, feature gates, billing placeholder flows, connection/import center, notifications, global search, and command palette.
+- [x] **Phase 2 — Product core:** rebuild dashboard, transactions, budgets, insights, goals, net worth, and forecast surfaces with shared persistent demo state, real CSV/OFX import/export, interactive chart ranges, filters, reduced-motion support, keyboard support, and mobile layouts. Verified in development and production-mode Chromium; 10 unit tests and 6 end-to-end tests pass. This is a working demo milestone, not a hosted SaaS launch.
+- [ ] **Phase 3 — Activation and monetization:** onboarding, local settings, planned pricing cards, import center, in-app notifications, and keyboard command palette are implemented. Remaining: authenticated workspaces, household membership/RBAC, real email/password/OAuth/magic-link/passkey/TOTP auth, sessions, Stripe checkout/portal/webhooks, trials, entitlements and usage enforcement, live bank adapters, and hosted export/deletion workflows.
 - [ ] **Phase 4 — SaaS readiness:** add versioned API foundations, audit/admin views, event model, security headers, GDPR self-service surfaces, API docs, health checks, Docker Compose, CI, and operational artifacts.
 - [ ] **Phase 5 — Verification and launch:** run lint, typecheck, build, dev smoke test, accessibility and responsive checks; fix all failures; update README, progress, launch checklist, unit economics, cost estimate, and roadmap.
 
 ## Definition of done
 
-Every phase must leave the app runnable with `npm run dev`, have complete files without placeholders or TODO markers, preserve demo mode, and include a commit with a clear phase message. Production integrations remain behind explicit environment-backed adapters so a clean local checkout can still demonstrate the product.
+Every completed phase must leave the app runnable with `npm run dev`, have complete files without placeholder implementations, preserve demo mode, and include a commit with a clear phase message. Unbuilt production integrations stay clearly marked as pending in this plan; demo interactions must not claim successful billing, bank syncing, email delivery, or hosted persistence.
+
+## Current implemented tree
+
+```text
+src/app/                     public pages and finance routes
+src/components/finance/      persistent provider, accessible forms, lazy chart
+src/components/layout/       responsive shell, command palette, PWA registration
+src/components/marketing/    shared public navigation and footer
+src/lib/finance/             validated ledger, seed, calculations, CSV/OFX parser
+src/lib/                     retained legacy API helpers
+src/middleware.ts            disabled-by-default legacy API gate
+tests/unit/                  domain and import/export invariants
+tests/e2e/                   browser workflows, accessibility, API gate checks
+public/                      service worker and offline recovery page
+```

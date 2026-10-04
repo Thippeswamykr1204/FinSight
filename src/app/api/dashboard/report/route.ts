@@ -9,8 +9,12 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;
     const now = new Date();
-    const month = parseInt(searchParams.get("month") || String(now.getMonth() + 1));
-    const year = parseInt(searchParams.get("year") || String(now.getFullYear()));
+    const month = parseInt(
+      searchParams.get("month") || String(now.getMonth() + 1),
+    );
+    const year = parseInt(
+      searchParams.get("year") || String(now.getFullYear()),
+    );
     const stats = await getDashboardStats(month, year);
     const report = buildMonthlyReport(stats, month, year);
     const filename = `finsight-report-${year}-${String(month).padStart(2, "0")}.txt`;

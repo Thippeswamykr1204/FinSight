@@ -26,14 +26,11 @@ export const RecurrenceFrequencyEnum = z.enum(["MONTHLY"]);
 export const TransactionTypeEnum = z.enum(["EXPENSE", "INCOME"]);
 
 const optionalQueryValue = <T extends z.ZodTypeAny>(schema: T) =>
-  z.preprocess(
-    (value) => {
-      if (value === null || value === undefined) return undefined;
-      if (typeof value === "string" && value.trim() === "") return undefined;
-      return value;
-    },
-    schema.optional()
-  );
+  z.preprocess((value) => {
+    if (value === null || value === undefined) return undefined;
+    if (typeof value === "string" && value.trim() === "") return undefined;
+    return value;
+  }, schema.optional());
 
 const transactionBaseSchema = z.object({
   amount: z
@@ -48,17 +45,19 @@ const transactionBaseSchema = z.object({
   type: TransactionTypeEnum.default("EXPENSE"),
   category: CategoryEnum,
   recurrenceFrequency: z.preprocess(
-    (value) => value === "" || value === null ? undefined : value,
-    RecurrenceFrequencyEnum.optional()
+    (value) => (value === "" || value === null ? undefined : value),
+    RecurrenceFrequencyEnum.optional(),
   ),
 });
 
 function validateTransactionCategory(
   data: { type?: "EXPENSE" | "INCOME"; category?: string },
-  ctx: z.RefinementCtx
+  ctx: z.RefinementCtx,
 ) {
   if (!data.type || !data.category) return;
-  const isExpenseCategory = (EXPENSE_CATEGORIES as readonly string[]).includes(data.category);
+  const isExpenseCategory = (EXPENSE_CATEGORIES as readonly string[]).includes(
+    data.category,
+  );
   if (data.type === "EXPENSE" && !isExpenseCategory) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -76,9 +75,13 @@ function validateTransactionCategory(
   }
 }
 
-export const transactionSchema = transactionBaseSchema.superRefine(validateTransactionCategory);
+export const transactionSchema = transactionBaseSchema.superRefine(
+  validateTransactionCategory,
+);
 
-export const transactionUpdateSchema = transactionBaseSchema.partial().superRefine(validateTransactionCategory);
+export const transactionUpdateSchema = transactionBaseSchema
+  .partial()
+  .superRefine(validateTransactionCategory);
 
 export const budgetSchema = z.object({
   category: ExpenseCategoryEnum,
@@ -90,24 +93,26 @@ export const budgetSchema = z.object({
   year: z.number().int().min(2020).max(2100),
 });
 
-export const paginationSchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  type: optionalQueryValue(TransactionTypeEnum),
-  category: optionalQueryValue(CategoryEnum),
-  search: optionalQueryValue(z.string().trim().max(200)),
-  startDate: optionalQueryValue(z.coerce.date()),
-  endDate: optionalQueryValue(z.coerce.date()),
-}).refine(
-  (data) => {
-    if (!data.startDate || !data.endDate) return true;
-    return data.startDate <= data.endDate;
-  },
-  {
-    message: "Start date must be before end date",
-    path: ["endDate"],
-  }
-);
+export const paginationSchema = z
+  .object({
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    type: optionalQueryValue(TransactionTypeEnum),
+    category: optionalQueryValue(CategoryEnum),
+    search: optionalQueryValue(z.string().trim().max(200)),
+    startDate: optionalQueryValue(z.coerce.date()),
+    endDate: optionalQueryValue(z.coerce.date()),
+  })
+  .refine(
+    (data) => {
+      if (!data.startDate || !data.endDate) return true;
+      return data.startDate <= data.endDate;
+    },
+    {
+      message: "Start date must be before end date",
+      path: ["endDate"],
+    },
+  );
 
 export type TransactionInput = z.infer<typeof transactionSchema>;
 export type BudgetInput = z.infer<typeof budgetSchema>;

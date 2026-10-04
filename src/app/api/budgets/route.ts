@@ -11,8 +11,12 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const now = new Date();
-    const month = parseInt(searchParams.get("month") || String(now.getMonth() + 1));
-    const year = parseInt(searchParams.get("year") || String(now.getFullYear()));
+    const month = parseInt(
+      searchParams.get("month") || String(now.getMonth() + 1),
+    );
+    const year = parseInt(
+      searchParams.get("year") || String(now.getFullYear()),
+    );
 
     const cacheKey = `budgets:${month}:${year}`;
     const cached = await getCache<BudgetWithSpent[]>(cacheKey);
@@ -31,7 +35,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     const spentMap = new Map(
-      spendingByCategory.map((s) => [s.category, s._sum.amount || 0])
+      spendingByCategory.map((s) => [s.category, s._sum.amount || 0]),
     );
 
     const result: BudgetWithSpent[] = budgets.map((budget) => {
@@ -65,7 +69,10 @@ export async function POST(request: NextRequest) {
     const parsed = budgetSchema.safeParse(body);
 
     if (!parsed.success) {
-      const errors = parsed.error.flatten().fieldErrors as Record<string, string[]>;
+      const errors = parsed.error.flatten().fieldErrors as Record<
+        string,
+        string[]
+      >;
       return apiError("Validation failed", 422, errors);
     }
 
@@ -90,7 +97,7 @@ export async function POST(request: NextRequest) {
         createdAt: budget.createdAt.toISOString(),
         updatedAt: budget.updatedAt.toISOString(),
       },
-      201
+      201,
     );
   } catch (error) {
     console.error("[BUDGETS_POST]", error);

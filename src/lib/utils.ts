@@ -16,6 +16,19 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+export function formatMoney(
+  amount: number,
+  currency = "USD",
+  options?: Intl.NumberFormatOptions,
+): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+    ...options,
+  }).format(amount);
+}
+
 export function formatDate(date: Date | string): string {
   return format(new Date(date), "MMM dd, yyyy");
 }
@@ -44,17 +57,17 @@ export const CATEGORIES = [
   ...INCOME_CATEGORIES,
 ] as const;
 
-export const TRANSACTION_TYPES = [
-  "EXPENSE",
-  "INCOME",
-] as const;
+export const TRANSACTION_TYPES = ["EXPENSE", "INCOME"] as const;
 
 export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
   EXPENSE: "Expense",
   INCOME: "Income",
 };
 
-export const CATEGORY_OPTIONS_BY_TYPE: Record<TransactionType, readonly Category[]> = {
+export const CATEGORY_OPTIONS_BY_TYPE: Record<
+  TransactionType,
+  readonly Category[]
+> = {
   EXPENSE: EXPENSE_CATEGORIES,
   INCOME: INCOME_CATEGORIES,
 };
@@ -95,17 +108,14 @@ export const CATEGORY_ICONS: Record<string, string> = {
   OTHER_INCOME: "💰",
 };
 
-export function apiResponse<T>(
-  data: T,
-  status = 200
-): Response {
+export function apiResponse<T>(data: T, status = 200): Response {
   return Response.json({ success: true, data }, { status });
 }
 
 export function apiError(
   message: string,
   status = 400,
-  errors?: Record<string, string[]>
+  errors?: Record<string, string[]>,
 ): Response {
   return Response.json({ success: false, message, errors }, { status });
 }

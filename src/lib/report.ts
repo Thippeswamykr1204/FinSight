@@ -1,7 +1,11 @@
 import { formatCurrency, formatMonth, CATEGORY_LABELS } from "@/lib/utils";
 import type { DashboardStats } from "@/types";
 
-export function buildMonthlyReport(stats: DashboardStats, month: number, year: number) {
+export function buildMonthlyReport(
+  stats: DashboardStats,
+  month: number,
+  year: number,
+) {
   const heading = `FinSight Monthly Report - ${formatMonth(month, year)}`;
   const lines = [
     heading,
@@ -16,15 +20,19 @@ export function buildMonthlyReport(stats: DashboardStats, month: number, year: n
     "",
     "Top expense categories",
     ...(stats.categoryBreakdown.length > 0
-      ? stats.categoryBreakdown.slice(0, 5).map((item, index) =>
-          `${index + 1}. ${CATEGORY_LABELS[item.category]} - ${formatCurrency(item.total)} (${item.percentage.toFixed(0)}%)`
-        )
+      ? stats.categoryBreakdown
+          .slice(0, 5)
+          .map(
+            (item, index) =>
+              `${index + 1}. ${CATEGORY_LABELS[item.category]} - ${formatCurrency(item.total)} (${item.percentage.toFixed(0)}%)`,
+          )
       : ["- No expense categories recorded this month"]),
     "",
     "Budget alerts",
     ...(stats.budgetAlerts.length > 0
-      ? stats.budgetAlerts.map((alert) =>
-          `- ${CATEGORY_LABELS[alert.category]}: ${alert.percentage.toFixed(0)}% used (${formatCurrency(alert.spent)} of ${formatCurrency(alert.budgetAmount)})`
+      ? stats.budgetAlerts.map(
+          (alert) =>
+            `- ${CATEGORY_LABELS[alert.category]}: ${alert.percentage.toFixed(0)}% used (${formatCurrency(alert.spent)} of ${formatCurrency(alert.budgetAmount)})`,
         )
       : ["- No budget alerts this month"]),
     "",
@@ -33,8 +41,9 @@ export function buildMonthlyReport(stats: DashboardStats, month: number, year: n
     "",
     "Recent transactions",
     ...(stats.recentTransactions.length > 0
-      ? stats.recentTransactions.map((transaction) =>
-          `- ${transaction.date.slice(0, 10)} | ${transaction.type} | ${transaction.description} | ${formatCurrency(transaction.amount)}`
+      ? stats.recentTransactions.map(
+          (transaction) =>
+            `- ${transaction.date.slice(0, 10)} | ${transaction.type} | ${transaction.description} | ${formatCurrency(transaction.amount)}`,
         )
       : ["- No recent transactions available"]),
     "",

@@ -10,11 +10,7 @@ export type Category =
   | "OTHER_INCOME";
 
 export type ExpenseCategory =
-  | "FOOD"
-  | "RENT"
-  | "TRAVEL"
-  | "SHOPPING"
-  | "ENTERTAINMENT";
+  "FOOD" | "RENT" | "TRAVEL" | "SHOPPING" | "ENTERTAINMENT";
 
 export type RecurrenceFrequency = "MONTHLY";
 export type TransactionType = "EXPENSE" | "INCOME";
