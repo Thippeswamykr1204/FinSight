@@ -2,6 +2,26 @@
   "name": "finsight",
   "version": "2.0.0",
   "private": true,
+  "description": "India-first personal finance workspace with integer-paise accounting and secure multi-tenant PostgreSQL storage.",
+  "author": "Thippeswamy",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Thippeswamykr1204/FinSight.git"
+  },
+  "homepage": "https://finsight-five-delta.vercel.app",
+  "license": "MIT",
+  "keywords": [
+    "nextjs",
+    "typescript",
+    "postgresql",
+    "prisma",
+    "fintech",
+    "personal-finance",
+    "india",
+    "pwa",
+    "better-auth",
+    "playwright"
+  ],
   "scripts": {
     "predev": "npm run db:generate",
     "dev": "next dev --turbopack",

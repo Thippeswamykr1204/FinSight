@@ -2,7 +2,7 @@ name: Quality
 on:
   pull_request:
   push:
-    branches: [main, rebuild/v2, feat/india-inr]
+    branches: [main, rebuild/v2, feat/india-inr, chore/portfolio-cleanup]
 permissions:
   contents: read
 concurrency:

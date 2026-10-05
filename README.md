@@ -10,6 +10,7 @@ An India-first personal finance workspace with precise rupee accounting and auth
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169e1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-178457?style=flat-square&logo=nodedotjs&logoColor=white)](package.json)
+[![License: MIT](https://img.shields.io/badge/License-MIT-178457?style=flat-square)](LICENSE)
 
 [Live demo — earlier release](https://finsight-five-delta.vercel.app) · [Docs](#documentation) · [Deploy](docs/DEPLOYMENT.md)
 
@@ -192,8 +193,10 @@ Planned work; no delivery dates or live integration claims:
 
 ## License
 
-No license is currently declared.
+[MIT](LICENSE) · Copyright © 2026 Thippeswamy.
 
 ## Author
 
 **[Thippeswamy](https://github.com/Thippeswamykr1204)** · [Repository](https://github.com/Thippeswamykr1204/FinSight) · [Issues](https://github.com/Thippeswamykr1204/FinSight/issues)
+
+For contributions, see [CONTRIBUTING](CONTRIBUTING.md).
