@@ -41,9 +41,17 @@ Verification: `npm run check` passes, 23 unit tests with 96.8% statement coverag
 
 Verified locally: `npm run check`, 26 unit tests (including Kolkata/UTC month rollover), 9 demo + 10 hosted production browser tests (including CSP nonce/hydration and HttpOnly/SameSite cookie assertions), non-root demo container health, missing-config boot failure, fresh hosted migration job, app/worker health, real standalone worker SMTP delivery/body erasure, container signup/verification/INR ledger mutation and logical dump/restore with paise totals checked. Caddy configuration validation passed. Runtime audit: zero vulnerabilities. Full audit: 7 high development-only braces-chain findings; documented, not falsely reported as clean. The phase 2 passing checkpoint was the pre-change baseline.
 
-## Next phase
+## Phase 4 — completed
 
-4. Generate real INR screenshots and replace the README with verified commands and honest feature status.
+- Captured and visually inspected six real production-build INR screenshots: dashboard, transactions, budgets, goals, dark dashboard and 390 × 844 mobile dashboard. Fresh contexts use fictional data, en-IN, Asia/Kolkata and loaded local fonts/charts; no mockup or customer records.
+- Replaced the README with regional/product contracts, feature status by mode, screenshot gallery, architecture/stack, annotated configuration, tested quick starts, verification, deployment, rights, roadmap and maintainer/license information.
+- Verified the repository's public URL serves an earlier release and labeled it accordingly. GitHub reports no license; no invented license or CI-passing badge was added.
+- Fixed the final dollar-language budget heading to rupee and added the Caddy hostname setting to the consolidated env reference.
+- Re-ran a clean `npm ci`, browser installation and pre-change aggregate/production suites. Manually exercised demo/hosted development launchers, production startup, exact README Docker demo and hosted-container up/down commands, including migrations, readiness and worker health.
+
+Final verification: formatting and `git diff --check` pass; post-change `npm run check` passes lint, types, 26 unit tests, coverage gates and the production web/worker build. Production demo Playwright: 9 passed; hosted: 10 passed. Docker build and complete container release smoke pass, including standalone SMTP and separate logical restore. Runtime audit: zero vulnerabilities; full audit still reports the 7 documented high build-tool findings. All six PNGs and 42 local documentation links/anchors validated; screenshots visually inspected. Every executable README command was exercised locally, including the deliberately failing full audit. The phase 3 passing checkpoint was the phase 4 baseline and was re-run before the final screenshot/copy edits.
+
+All four repository phases are complete on `feat/india-inr`. Public promotion and the operations below remain external follow-up work.
 
 ## External / operational limitations
 

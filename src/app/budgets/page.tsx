@@ -61,7 +61,7 @@ export default function BudgetsPage() {
     <div className="space-y-6">
       <PageHeading
         eyebrow="Your plan"
-        title="Give every dollar a direction."
+        title="Give every rupee a direction."
         description="Flexible guardrails, built around the life you actually live."
       >
         <input
