@@ -1,6 +1,10 @@
 # Deployment — two supported operational paths
 
-Reviewed 5 October 2026. **Locally verified:** production build, both production browser suites, standalone demo/hosted images, migration job, actual SMTP worker delivery, configuration fail-fast and container health. **Not executed:** a public Vercel, Neon or AWS deployment, real domain certificate issuance, production SMTP approval or a target-region disaster-recovery drill. The steps below are a source-checked deploy path, not a claim that external infrastructure has already been provisioned.
+The web app and durable email worker are separate processes. The procedures below cover public hosting, release migrations, SMTP, backups and rollback; provider provisioning and production approvals are operator responsibilities.
+
+## Demo on Vercel
+
+Import the repository, select Node 22, install with `npm ci` and build with `npm run build`. Keep `HOSTED_ENABLED=false` and `ENABLE_LEGACY_API=false`; no database or SMTP is needed. Set `NEXT_PUBLIC_APP_URL` to the deployment's real HTTPS origin and redeploy so metadata uses it. Check the landing page, `/dashboard`, mutations/reload persistence and `/api/health`, then update the repository website and README demo link.
 
 ## Common release contract
 
@@ -28,17 +32,18 @@ Use one tested immutable image/commit per release. Migrate with **only** `npm ru
 ## Path B — Docker VPS / AWS Mumbai
 
 1. Provision a supported Linux VPS/EC2 host in `ap-south-1` with Docker Engine and Compose 2.20+. For a modest pilot, start with 2 vCPU/4 GB RAM and monitor it; this is a sizing starting point, not a load-tested capacity claim. Open 80/443 publicly and limit SSH to an administrator network. Postgres, Redis and the app origin must not be exposed directly.
-2. Point your real DNS A/AAAA record to the host. Install Caddy using its official packaging and run `ops/Caddyfile` under the Caddy system service. Supply `FINSIGHT_DOMAIN` and `FINSIGHT_PORT` to that service. Caddy obtains/renews HTTPS and overwrites `X-Real-IP` with the direct peer; set app `TRUSTED_IP_HEADER=x-real-ip`. If adding a CDN, configure its explicit trusted proxy network and reverify anti-spoofing before relying on forwarded identity. The config is complete but public certificate issuance is not locally exercised.
+2. Point your real DNS A/AAAA record to the host. Install Caddy using its official packaging and run `ops/Caddyfile` under the Caddy system service. Supply `FINSIGHT_DOMAIN` and `FINSIGHT_PORT` to that service. Caddy obtains/renews HTTPS and overwrites `X-Real-IP` with the direct peer; set app `TRUSTED_IP_HEADER=x-real-ip`. If adding a CDN, configure its explicit trusted proxy network and reverify anti-spoofing before relying on forwarded identity.
 3. Create a mode-0600 environment file outside Git from `.env.example`. Supply fresh auth/database passwords and public origins, verified SMTP and real privacy contacts. `POSTGRES_PASSWORD` must be nonempty for the Compose database. Do not reuse historical template credentials. Keep `HOSTED_LOCAL=false` publicly; the loopback escape hatch is rejected for public hostnames.
 4. Build/tag the `runner` and `migrator` targets for the same release. `compose.yaml` starts the app by default in demo mode; the `hosted` profile adds Postgres, a one-shot migration job and the durable email worker. App/worker wait for successful migration; a failed migration prevents promotion. The app/worker are non-root, read-only, capability-dropped, with a writable temporary mount. The app binds only to host loopback.
-5. For the hosted local rehearsal (actually executed with fresh credentials):
+5. For a local hosted-container rehearsal:
 
    ```sh
    npm run env:init -- --mode hosted --output .local/docker.env
    docker compose --env-file .local/docker.env -f compose.yaml -f compose.smoke.yaml --profile hosted up -d --build --wait
    ```
 
-   This uses a **test-only** SMTP sink at `http://localhost:18026` and app at `http://localhost:3302`. `compose.smoke.yaml` never belongs in a public deployment. Production uses just `compose.yaml`, its protected environment file and the verified SMTP provider. The documented loopback rehearsal does not attest cloud credentials or legal readiness.
+   This uses a **test-only** SMTP sink at `http://localhost:18026` and app at `http://localhost:3302`. The generator refuses overwrites; reuse the protected file for later rehearsals. `compose.smoke.yaml` never belongs in a public deployment. Production uses just `compose.yaml`, its protected environment file and the verified SMTP provider.
+
 6. For a managed Mumbai database, use RDS PostgreSQL in private subnets with encryption, automated backups/PITR and security groups restricted to app/worker/release jobs. Use the migrator target as a separate release task with its direct DSN, and the runner image for app/worker. The bundled local Postgres profile is a VPS path; don't provision an unused local database alongside RDS. Run the application container with its runtime environment after that migration succeeds.
 7. Keep SES in Mumbai as in Path A, and monitor bounce/complaint rates. Restrict the SMTP principal to the sender identity. No SMTP key is embedded in the image; all runtime configuration is injected. Google/Apple adapters need independent provider-console/test validation.
 8. Schedule daily logical backups and, for a serious public service, continuous WAL/PITR via managed RDS or an operationally proven backup system. Encrypt archives with KMS/age before off-host storage; retain daily backups for 7 days and a recovery window chosen by the operator (a 30-day starting policy must be reviewed). Include the auth secret/key lifecycle needed to read undelivered encrypted outbox messages. Do not back up only the Docker volume and call it disaster recovery.
@@ -67,18 +72,18 @@ After actual deployment:
 - Separate two-user tenant test; forbidden foreign origins; spoofed/invalid IP headers cannot evade login limits.
 - Actual standalone worker delivery, queue age/failed jobs alerts and erased sent bodies; provider delivery/bounce status checked.
 - Export then delete disposable workspace/account; verify sessions stop working and shared ownership rules hold.
-- Real device/mobile dark mode, no large-number overflow, offline recovery; financial responses remain uncached.
+- Real-device layout, demo dark mode, no large-number overflow, offline recovery; financial responses remain uncached.
 - Backup artifact restored with balances checked, rollback rehearsed, privacy/grievance contact and processor/retention disclosures reviewed.
 
 ## Ongoing operations
 
 Worker cleanup runs hourly: expired rate buckets/auth verifications, idempotency records older than 30 days, sent-mail metadata older than 7 days, exhausted mail older than 30 days. Idempotent finance replay is therefore guaranteed within its 30-day retention window; retrying an ancient manually created command after expiry is a new write. Monitor cleanup and queue errors; successful SMTP is not a health proof for every recipient. Identity links are short-lived; after auth-secret rotation, undelivered encrypted mail must be invalidated/reissued. A versioned outbox-key rotation mechanism remains pending.
 
-GitHub CI runs install, formatting, lint, typecheck, coverage, production build/browser suites, runtime audit and demo/hosted container smoke. It also publishes the full dependency audit report with a documented build-tool exception. No GitHub-hosted execution or automated cloud deploy is claimed; the two promotion procedures above are the deploy path.
+The Quality workflow configures install, formatting, lint, typecheck, coverage, production build/browser suites, runtime audit and demo/hosted container smoke. It also reports the full dependency audit with a documented build-tool exception. Deployment promotion is a separate operation.
 
-Historical external database/app credentials in Git history must be revoked in their owning services. Current templates/images are sanitized and ignored local secrets were not tracked. No provider administrative credentials were supplied for remote rotation; do not confuse generating fresh local credentials with revoking an external password.
+Historical database/app credentials must be revoked in their owning services. Generating fresh local credentials does not revoke an external password; see [rotation guidance](SECURITY.md#secret-handling-and-rotation).
 
-## Source references (reviewed 5 October 2026)
+## Provider references
 
 - [Vercel function regions](https://vercel.com/docs/functions/configuring-functions/region) and [region list](https://vercel.com/docs/regions)
 - [Neon regions](https://neon.com/docs/introduction/regions), [Prisma integration](https://neon.com/docs/guides/prisma), [restore history](https://neon.com/docs/introduction/branch-restore)

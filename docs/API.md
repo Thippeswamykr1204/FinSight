@@ -6,22 +6,22 @@ Success envelope: `data` plus `requestId`. Error envelope: `error.code`, `error.
 
 ## Routes
 
-| Method | Route | Role / behavior |
-|---|---|---|
-| GET | `/api/v1/workspaces` | Lists only the authenticated user’s memberships |
-| POST | `/api/v1/workspaces` | Creates an empty workspace and its owner membership |
-| GET | `/api/v1/workspaces/{id}/overview` | Member; DB-backed balances, monthly totals, budgets, goals and members |
-| GET | `/api/v1/workspaces/{id}/transactions` | Member; `limit` up to 100, `search`, `category`, opaque `cursor` |
-| POST | `/api/v1/workspaces/{id}/commands` | Editor/admin/owner; idempotent finance mutation |
-| POST | `/api/v1/workspaces/{id}/members` | Admin/owner; queue an invitation; only owner can grant admin |
-| PATCH | `/api/v1/workspaces/{id}/members` | Owner; change a non-owner member’s role |
-| DELETE | `/api/v1/workspaces/{id}/members` | Admin/owner subject to target-role checks; owners cannot be removed |
-| POST | `/api/v1/invitations/accept` | Verified invited email; single-use, unexpired token |
-| GET | `/api/v1/workspaces/{id}/audit` | Admin/owner; latest 100 audit events |
-| GET | `/api/v1/workspaces/{id}/export` | Owner; consistent JSON snapshot plus audit event |
-| DELETE | `/api/v1/workspaces/{id}` | Owner + sign-in within 10 minutes; confirmation `DELETE {exact name}`; permanent ledger cascade |
-| GET | `/api/v1/me` | Personal profile, recorded notice acceptance, memberships and security metadata; no authentication secrets |
-| DELETE | `/api/v1/me` | Recent sign-in; confirmation `DELETE MY ACCOUNT`; rejects while the user owns workspaces |
+| Method | Route                                  | Role / behavior                                                                                            |
+| ------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/v1/workspaces`                   | Lists only the authenticated user’s memberships                                                            |
+| POST   | `/api/v1/workspaces`                   | Creates an empty workspace and its owner membership                                                        |
+| GET    | `/api/v1/workspaces/{id}/overview`     | Member; DB-backed balances, monthly totals, budgets, goals and members                                     |
+| GET    | `/api/v1/workspaces/{id}/transactions` | Member; `limit` up to 100, `search`, `category`, opaque `cursor`                                           |
+| POST   | `/api/v1/workspaces/{id}/commands`     | Editor/admin/owner; idempotent finance mutation                                                            |
+| POST   | `/api/v1/workspaces/{id}/members`      | Admin/owner; queue an invitation; only owner can grant admin                                               |
+| PATCH  | `/api/v1/workspaces/{id}/members`      | Owner; change a non-owner member’s role                                                                    |
+| DELETE | `/api/v1/workspaces/{id}/members`      | Admin/owner subject to target-role checks; owners cannot be removed                                        |
+| POST   | `/api/v1/invitations/accept`           | Verified invited email; single-use, unexpired token                                                        |
+| GET    | `/api/v1/workspaces/{id}/audit`        | Admin/owner; latest 100 audit events                                                                       |
+| GET    | `/api/v1/workspaces/{id}/export`       | Owner; consistent JSON snapshot plus audit event                                                           |
+| DELETE | `/api/v1/workspaces/{id}`              | Owner + sign-in within 10 minutes; confirmation `DELETE {exact name}`; permanent ledger cascade            |
+| GET    | `/api/v1/me`                           | Personal profile, recorded notice acceptance, memberships and security metadata; no authentication secrets |
+| DELETE | `/api/v1/me`                           | Recent sign-in; confirmation `DELETE MY ACCOUNT`; rejects while the user owns workspaces                   |
 
 Identity endpoints are handled by Better Auth under `/api/identity`. Signup requires `noticeAccepted: true`; the current policy version/time are server-assigned, not client-controlled. Earlier users have no fabricated consent record. External OAuth creation without prior acceptance is refused. The previous `/api/auth/login` endpoint remains disabled legacy behavior and is not the new sign-in path.
 

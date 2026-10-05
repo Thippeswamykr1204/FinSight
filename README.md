@@ -14,7 +14,7 @@ Track rupees precisely, understand your cash flow, and give the next chapter a d
 [![CI](https://img.shields.io/badge/CI-configured-4c6fff?style=flat-square)](.github/workflows/quality.yml)
 [![License](https://img.shields.io/badge/license-not%20specified-lightgrey?style=flat-square)](#license-and-contact)
 
-[Try v2 locally](#quick-start) · [Live site — earlier release](https://finsight-five-delta.vercel.app) · [Screenshots](#screenshots) · [Deployment](docs/DEPLOYMENT.md) · [Delivery checkpoint](docs/PROGRESS.md)
+[Try v2 locally](#quick-start) · [Live site — earlier release](https://finsight-five-delta.vercel.app) · [Screenshots](#screenshots) · [Deployment](docs/DEPLOYMENT.md) · [Docs](#documentation)
 
 </div>
 
@@ -98,7 +98,7 @@ Goal contributions **earmark existing savings**: they do not transfer money, inc
 - **Existing records:** financially empty legacy hosted workspaces adopt INR. Funded USD workspaces retain their currency and amounts, remain exportable and reject finance writes. Earlier browser data remains available for export in Settings. No silent FX conversion.
 - **Language:** English (India). Hindi/Kannada are not offered without reviewed translations.
 
-See [the regional and migration contract](docs/INDIA.md) and [every accepted/rejected product candidate](docs/IMPROVEMENTS.md).
+See [the regional and migration contract](docs/INDIA.md) and [engineering/product decisions](docs/DECISIONS.md).
 
 ## Screenshots
 
@@ -211,7 +211,7 @@ docker build -t finsight:local .
 npm run test:container
 ```
 
-**Local checkpoint:** 26 unit tests, 9 demo browser tests and 10 hosted tests pass. `check` gates client generation, lint, types, coverage and the production web/worker build. Browser checks cover real mutations, persistence, imports, mobile overflow, light/dark axe scans, local rupee glyphs, identity/MFA/passkeys, tenant/role denials, concurrency, migration safety, data rights and hosted script nonces/cookie attributes.
+The test suites contain 26 unit tests, 9 demo browser tests and 10 hosted tests. `check` gates client generation, lint, types, coverage and the production web/worker build. Browser checks cover real mutations, persistence, imports, mobile overflow, light/dark axe scans, local rupee glyphs, identity/MFA/passkeys, tenant/role denials, concurrency, migration safety, data rights and hosted script nonces/cookie attributes.
 
 Container smoke covers non-root demo health, invalid configuration rejection, fresh release migrations, database readiness, worker SMTP delivery/body erasure, signup/verification/INR ledger writes, and a disposable logical dump/restore with paise totals reconciled. It removes only its own smoke resources. Financial coverage thresholds are **80% lines/statements/functions and 70% branches**; they are not a full-repository coverage claim.
 
@@ -266,11 +266,17 @@ New hosted signups require privacy-notice acceptance, recorded server-side with 
 
 Primary-store operations support an India-first DPDP notice and rights workflow. Delivered mail, exported files, processor logs and encrypted backups still need operator retention/deletion policy, a real grievance channel and legal review. This is not a compliance certification. Demo storage is unencrypted and has no remote backup; export before clearing it. Hosted/auth pages use nonced script CSP and no-store, and the service worker caches only recovery assets.
 
-## Roadmap and product boundaries
+## Roadmap
 
-- **Delivered:** INR/paise/calendar migration, Indian categories/manual account types, imports, reminders, planning calculators, seasonal suggestions, demo report sharing, primary-store rights, container release tooling and real screenshots.
-- **Planned:** approved Razorpay checkout/entitlements, verified AA adapter, live OAuth/SMTP operations, public deployment, observability, cloud restore drills and versioned outbox-key rotation. Planned Pro/Business prices are **₹299 / ₹799 per month + 18% GST** (illustrative totals **₹352.82 / ₹942.82**); there is no paid checkout.
-- **Deferred with reasons:** bank-specific presets without authentic fixtures, persistent loan/transfer/investment reconciliation, tax-regime/80C/80D/GST accounting, expense settlement, offline financial writes and unreviewed translations. [Decision matrix](docs/IMPROVEMENTS.md) and [launch roadmap](docs/LAUNCH.md).
+Planned work, with no delivery dates or live integration claims:
+
+- Deploy the current demo and measure real-device performance.
+- Add approved Razorpay checkout, GST invoices and server-enforced entitlements.
+- Implement a sandbox-verified Account Aggregator adapter with consent/revocation.
+- Validate production SMTP/OAuth and complete processor retention/legal operations.
+- Add observability, cloud restore drills and versioned outbox-key rotation.
+
+Deliberate exclusions and their rationale are in [DECISIONS](docs/DECISIONS.md).
 
 ## Contributing
 
@@ -278,15 +284,12 @@ Open a focused issue or pull request with the user-visible change and evidence. 
 
 ## Documentation
 
-| Guide                                                              | Contents                                                  |
-| ------------------------------------------------------------------ | --------------------------------------------------------- |
-| [Progress](docs/PROGRESS.md)                                       | Four-phase delivery evidence and external limits          |
-| [India](docs/INDIA.md) / [Product decisions](docs/IMPROVEMENTS.md) | Money/calendar/migration contract and candidate decisions |
-| [Hosted](docs/HOSTED.md) / [API](docs/API.md)                      | Local identity/workspaces and authenticated API v1        |
-| [Deployment](docs/DEPLOYMENT.md) / [Security](docs/SECURITY.md)    | Operational paths, threat model, secrets and audits       |
-| [Account Aggregator](docs/ACCOUNT_AGGREGATOR.md)                   | Provider boundary and prerequisites; no live sync         |
-| [Launch](docs/LAUNCH.md)                                           | Release checklist, planned economics and roadmap          |
-| [Review](docs/REVIEW.md) / [Build plan](docs/BUILD_PLAN.md)        | Original review and retained architecture decisions       |
+| Guide                                                           | Contents                                                  |
+| --------------------------------------------------------------- | --------------------------------------------------------- |
+| [India](docs/INDIA.md) / [Decisions](docs/DECISIONS.md)         | Money/calendar/migration contract and engineering choices |
+| [Hosted](docs/HOSTED.md) / [API](docs/API.md)                   | Local identity/workspaces and authenticated API v1        |
+| [Deployment](docs/DEPLOYMENT.md) / [Security](docs/SECURITY.md) | Operational paths, threat model, secrets and audits       |
+| [Account Aggregator](docs/ACCOUNT_AGGREGATOR.md)                | Provider boundary and prerequisites; no live sync         |
 
 ## License and contact
 
