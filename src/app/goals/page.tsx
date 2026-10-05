@@ -17,6 +17,7 @@ import {
   localDate,
   money,
   toPaise,
+  seasonalGoals,
   type Goal,
 } from "@/lib/finance/model";
 
@@ -193,9 +194,15 @@ export default function GoalsPage() {
             <input
               required
               name="name"
+              list="seasonal-goals"
               maxLength={80}
               className="control px-3"
             />
+            <datalist id="seasonal-goals">
+              {seasonalGoals.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
           </Field>
           <Field label="Target amount (INR)">
             <input

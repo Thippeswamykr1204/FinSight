@@ -35,6 +35,9 @@ import type {
 } from "@/lib/hosted/contracts";
 import {
   categories,
+  accountTypes,
+  seasonalGoals,
+  type Account,
   categoryColors,
   localDate,
   money as formatMoney,
@@ -42,6 +45,7 @@ import {
   type Transaction,
 } from "@/lib/finance/model";
 import { region, displayDate } from "@/lib/finance/region";
+import { cardReminders } from "@/lib/finance/india-rules";
 import {
   download,
   exportCsv,
@@ -80,6 +84,7 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
   const [editing, setEditing] = useState<HostedEntry | null>(null);
   const [funding, setFunding] = useState<HostedGoal | null>(null);
   const [deleting, setDeleting] = useState<HostedEntry | null>(null);
+  const [deleteWorkspace, setDeleteWorkspace] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -163,7 +168,8 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
           action: "account.create",
           data: {
             name: field("name"),
-            type: field("type") as "Cash" | "Credit" | "Investments",
+            type: field("type") as Account["type"],
+            dueDate: field("dueDate") || null,
             openingBalance: signedPaise(field("balance")),
           },
         });
@@ -468,6 +474,18 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
         )}
       </PageHeading>
       <FormError error={loadError} />
+      {cardReminders(
+        data.accounts.map((account) => ({
+          ...account,
+          dueDate: account.dueDate?.slice(0, 10) ?? null,
+        })),
+      ).map((reminder) => (
+        <p key={reminder.id} role="status" className="surface p-4 text-sm">
+          {reminder.name} · Payment due {displayDate(reminder.dueDate)}
+          {reminder.days < 0 ? " (past due date)" : ""}. Check your issuer’s
+          statement; this manual reminder does not know whether you have paid.
+        </p>
+      ))}
       {data.workspace.currency !== region.currency && (
         <p role="status" className="surface p-5 text-sm">
           Legacy {data.workspace.currency} ledger · read-only. Your original
@@ -722,6 +740,27 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
                 <p className="mt-4 text-xs text-[var(--ink-soft)]">
                   Opening balance {money(account.openingBalance)}
                 </p>
+                {canWrite &&
+                  ["Credit Card", "Credit"].includes(account.type) && (
+                    <label className="mt-4 block text-xs">
+                      Payment due date
+                      <input
+                        aria-label={`Payment due for ${account.name}`}
+                        type="date"
+                        className="control mt-2 w-full px-3"
+                        value={account.dueDate?.slice(0, 10) ?? ""}
+                        onChange={(event) => {
+                          void command({
+                            action: "account.reminder",
+                            id: account.id,
+                            dueDate: event.target.value || null,
+                          })
+                            .then(() => setNotice("Payment reminder updated."))
+                            .catch((caught) => setLoadError(String(caught)));
+                        }}
+                      />
+                    </label>
+                  )}
               </article>
             ))}
           </div>
@@ -919,8 +958,58 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
               <Download size={15} className="mr-2" /> Export workspace data
             </Button>
           )}
+          {data.role === "OWNER" && (
+            <Button
+              variant="destructive"
+              className="ml-3 mt-6"
+              onClick={() => {
+                setDeleteWorkspace(true);
+                setError("");
+              }}
+            >
+              Delete workspace
+            </Button>
+          )}
         </section>
       )}
+      <FinanceDialog
+        open={deleteWorkspace}
+        onClose={() => setDeleteWorkspace(false)}
+        title="Delete this workspace?"
+        description="All members lose access. Accounts, transactions, goals, budgets and audit records are permanently removed. Export first; sign in again if your session is older than 10 minutes."
+      >
+        <form
+          className="space-y-5"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const confirmation = String(
+              new FormData(event.currentTarget).get("confirmation"),
+            );
+            setBusy(true);
+            setError("");
+            try {
+              await api(base, { method: "DELETE", body: { confirmation } });
+              window.location.assign("/app");
+            } catch (caught) {
+              setError(String(caught));
+              setBusy(false);
+            }
+          }}
+        >
+          <Field label={`Type DELETE ${data.workspace.name}`}>
+            <input
+              name="confirmation"
+              required
+              className="control px-3"
+              autoComplete="off"
+            />
+          </Field>
+          <FormError error={error} />
+          <Button type="submit" variant="destructive" loading={busy}>
+            Permanently delete workspace
+          </Button>
+        </form>
+      </FinanceDialog>
       <FinanceDialog
         open={!!editor}
         onClose={() => {
@@ -937,8 +1026,9 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
           <div className="space-y-4">
             <p className="rounded-xl bg-[var(--surface-muted)] p-3 text-xs leading-6">
               CSV headers: date,merchant,amount,type,category. Dates use
-              YYYY-MM-DD. Limit: 2 MB / 1,000 rows. Duplicates are checked again
-              on the server.
+              DD/MM/YYYY or YYYY-MM-DD, amounts are INR rupees. Limit: 2 MB /
+              1,000 rows. Merchant rules suggest categories; review before
+              saving. Duplicates are checked again on the server.
             </p>
             <Field label="Destination account">
               <select
@@ -1003,19 +1093,28 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
                 <input
                   required
                   name="name"
+                  list={editor === "goal" ? "hosted-seasonal-goals" : undefined}
                   maxLength={80}
                   className="control px-3"
                 />
+                <datalist id="hosted-seasonal-goals">
+                  {seasonalGoals.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
               </Field>
             )}
             {editor === "account" && (
               <>
                 <Field label="Account type">
                   <select name="type" className="control px-3">
-                    <option>Cash</option>
-                    <option>Credit</option>
-                    <option>Investments</option>
+                    {accountTypes.map((type) => (
+                      <option key={type}>{type}</option>
+                    ))}
                   </select>
+                </Field>
+                <Field label="Next payment due date (optional; credit cards)">
+                  <input type="date" name="dueDate" className="control px-3" />
                 </Field>
                 <Field label="Opening balance (INR; negative for debt)">
                   <input

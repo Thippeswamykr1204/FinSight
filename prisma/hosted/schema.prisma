@@ -17,6 +17,9 @@ model User {
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   twoFactorEnabled Boolean           @default(false)
+  noticeAccepted   Boolean           @default(false)
+  noticeVersion    String            @default("")
+  noticeAcceptedAt DateTime?
   sessions         Session[]
   accounts         Account[]
   twoFactors       TwoFactor[]
@@ -166,6 +169,7 @@ model FinancialAccount {
   name           String
   type           String
   openingBalance BigInt
+  dueDate        DateTime?      @db.Date
   createdAt      DateTime      @default(now())
   workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   entries        LedgerEntry[]

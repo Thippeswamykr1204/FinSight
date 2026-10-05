@@ -1,35 +1,42 @@
 import type { Metadata } from "next";
 import { SitePage, SiteTitle } from "@/components/marketing/site-shell";
-export const metadata: Metadata = { title: "Preview privacy notice" };
+export const metadata: Metadata = { title: "Privacy and data rights" };
+export const dynamic = "force-dynamic";
 export default function PrivacyPage() {
   return (
     <SitePage>
       <SiteTitle
-        eyebrow="Last updated October 4, 2026"
+        eyebrow="Last updated 5 October 2026"
         title="Your data. Your view."
-        description="Privacy notice for the FinSight browser-local preview."
+        description="India-first privacy notice for the local demo and self-hosted workspace."
       />
       <div className="mx-auto mt-14 max-w-3xl space-y-9">
         {[
           [
-            "What the preview stores",
-            "The preview stores your display name, preferences, manual accounts, transactions, budgets, and goals in this browser’s local storage. Sample data is fictional. Avoid entering sensitive information on a shared or public device.",
+            "Notice and consent",
+            "The demo stores your display name, preferences and financial records in this browser. Hosted mode processes account identity, security devices, workspace membership and the financial records you choose to enter for finance tracking and account security. Signup requires acceptance of this notice and the terms; the server records its version and acceptance time. No advertising or bank-data consent is bundled into account access. Sample data is fictional.",
           ],
           [
             "Where processing happens",
-            "Finance calculations and statement imports run in your browser. The preview does not upload your financial records, send them to an AI service, or connect to a bank. Hosting providers may process ordinary HTTP request data, such as IP addresses, paths, and browser headers, to deliver the site and troubleshoot availability.",
+            "Demo calculations and imports stay in your browser. Hosted imports are uploaded only when you save their preview; records are stored in the operator's PostgreSQL database. Hosting and SMTP processors handle request/security metadata and transactional email. There is no live bank sync, billing, advertising tracker or AI service. Sharing or downloading a report sends it only where you choose.",
           ],
           [
             "Storage and retention",
-            "Local records remain until you clear them through Settings or remove the site’s browser data. This storage is not encrypted with a personal key. The site does not install advertising trackers or product analytics in the preview. A legacy single-operator API is disabled by default; operators who enable it are responsible for its separate data handling.",
+            "Local records remain until you clear them, including retained earlier-currency data. Local storage is not encrypted with a personal key. Hosted records remain until the owner deletes the workspace or the operator applies a documented retention policy. SMTP outbox bodies are encrypted and erased after delivery. Backup retention, access/security logs and already delivered email are governed by the operator and its processors. An India region is the deployment recommendation, not a claim about every self-hosted instance.",
           ],
           [
             "Export and deletion",
-            "Export the workspace as JSON or transactions as CSV through the app. Clear demo data in Settings to remove the financial records from this browser. Clearing this site’s storage removes all local preferences as well. Previously downloaded files are controlled by you and are not deleted by the app.",
+            "Export and clear the demo in Settings. Hosted users can export personal profile/device metadata and delete their account in Account security; owners export and delete workspace records in Members. Deletion needs a recent sign-in and explicit confirmation. Owned workspaces must be deleted first; shared records owned by others are retained. Authentication secrets are never included in exports. Downloads and messages already sent to recipients cannot be recalled.",
           ],
           [
-            "Before a hosted launch",
-            "A hosted, account-based product needs a controller identity, contact channel, jurisdiction-specific rights process, processor list, and retention schedule. Those production terms are not established by this preview notice. Paid and hosted features remain unavailable until their policies and operations are ready.",
+            "India's DPDP Act 2023 and your rights",
+            "The operator must assess the DPDP Act 2023, notified rules and phased commencement applicable to its launch. Data principals can request access information, correction, erasure, grievance redressal and nomination through the operator. Withdraw optional consent by stopping sharing; stop account processing through deletion or a rights request. The self-service controls support these requests but do not certify legal compliance. Where GDPR applies, access, rectification, erasure, portability, restriction and objection remain relevant.",
+          ],
+          [
+            "Grievance and operator contact",
+            process.env.PRIVACY_CONTACT_EMAIL
+              ? `Contact ${process.env.PRIVACY_CONTACT_EMAIL}. Grievance officer: ${process.env.GRIEVANCE_OFFICER_NAME || "the deployment administrator"}. The operator is responsible for publishing its legal identity, processor list, response times, retention schedule and escalation route before collecting public customer data.`
+              : "No public operator contact is configured. This is an evaluation deployment. A public hosted launch requires an identified operator, grievance officer, contact channel and reviewed retention/rights process.",
           ],
         ].map(([title, copy]) => (
           <section key={title}>

@@ -43,6 +43,7 @@ export async function register(client: APIRequestContext, address = email()) {
     data: {
       email: address,
       password,
+      noticeAccepted: true,
       name: "Hosted Test",
       callbackURL: "/sign-in",
     },

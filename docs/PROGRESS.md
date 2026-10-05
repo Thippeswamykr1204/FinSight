@@ -21,9 +21,18 @@ Next.js 15 / TypeScript / Better Auth / isolated Prisma PostgreSQL v2 ledger. Br
 Baseline: `npm run check`, 7 demo and 7 hosted production Playwright tests passed before edits.
 Phase 1: `npm run check` passes (lint, typecheck, 19 unit tests, coverage 96.11% statements / 95.45% branches, production build). Production Playwright: 7 demo + 9 hosted tests pass, including real SQL migration safety, read-only currency boundary, identity, isolation, accessibility and mobile checks.
 
+## Phase 2 — completed
+
+- Every candidate accepted/rejected with scope and reason in `docs/IMPROVEMENTS.md`; unsupported bank presets, tax assumptions, billing, settlement and investment accounting were not guessed.
+- Indian categories, conservative merchant suggestions and strict UPI narration references; all manual Indian account types and persisted/updateable credit-card due reminders.
+- EMI amortization with CSV schedule, transparent SIP and goal calculators in demo/hosted shells; seasonal goal suggestions and shareable INR FY report text.
+- India-first DPDP notice/terms, server-recorded signup notice acceptance, personal export and real owner/recent-session-controlled workspace/account deletion. Backup/processor retention and legal review remain explicit operator responsibilities.
+- 44px controls/coarse-pointer buttons and readable responsive totals; retained lazy charts and recovery-only PWA. Chromium confirms both local Geist and Fraunces fonts render the rupee glyph without fallback.
+
+Verification: `npm run check` passes, 23 unit tests with 96.8% statement coverage; production demo Playwright 9 tests and hosted Playwright 10 tests, including deletion/notice/negative tenant and stale-session cases. The phase 1 passing checkpoint was phase 2's pre-change baseline.
+
 ## Next phases
 
-2. Evaluate each India-focused improvement; document every accept/reject and verify accepted work.
 3. Consolidate environment, production containers/CI/security, deploy runbooks and container smoke verification.
 4. Generate real INR screenshots and replace the README with verified commands and honest feature status.
 

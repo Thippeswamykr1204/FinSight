@@ -22,6 +22,7 @@ test("a real account verifies email, creates a workspace, and persists financial
   await page.getByLabel("Your name").fill("Morgan");
   await page.getByLabel("Email address").fill(address);
   await page.getByLabel(/^Password/).fill(password);
+  await page.getByLabel("Accept privacy notice and terms").check();
   await page
     .getByRole("button", { name: "Create account", exact: true })
     .click();

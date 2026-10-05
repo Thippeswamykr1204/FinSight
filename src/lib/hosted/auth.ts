@@ -6,6 +6,7 @@ import { hostedConfig } from "./config";
 import { hostedDb } from "./db";
 import { queueEmail } from "./email";
 import { consumeLimit } from "./rate-limit";
+import { privacyNoticeVersion } from "./policy";
 
 function createAuth() {
   const config = hostedConfig();
@@ -54,6 +55,21 @@ function createAuth() {
         ),
     },
     account: { encryptOAuthTokens: true, accountLinking: { enabled: false } },
+    user: {
+      additionalFields: {
+        noticeAccepted: {
+          type: "boolean",
+          required: true,
+          defaultValue: false,
+        },
+        noticeVersion: {
+          type: "string",
+          input: false,
+          defaultValue: privacyNoticeVersion,
+        },
+        noticeAcceptedAt: { type: "date", input: false, required: false },
+      },
+    },
     verification: { storeIdentifier: "hashed" },
     socialProviders: {
       ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
@@ -87,6 +103,24 @@ function createAuth() {
       },
     },
     databaseHooks: {
+      user: {
+        create: {
+          before: async (user) => {
+            if (!("noticeAccepted" in user) || user.noticeAccepted !== true)
+              throw new APIError("BAD_REQUEST", {
+                message:
+                  "Read and accept the privacy notice and terms before creating an account.",
+              });
+            return {
+              data: {
+                ...user,
+                noticeVersion: privacyNoticeVersion,
+                noticeAcceptedAt: new Date(),
+              },
+            };
+          },
+        },
+      },
       session: {
         create: {
           before: async (session, context) => {

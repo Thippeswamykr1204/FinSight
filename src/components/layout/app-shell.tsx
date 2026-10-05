@@ -7,6 +7,7 @@ import {
   ArrowLeftRight,
   Bell,
   CreditCard,
+  Calculator,
   Goal,
   LayoutDashboard,
   Lightbulb,
@@ -23,6 +24,8 @@ import {
 import { FinanceDialog } from "@/components/finance/primitives";
 import { useFinance } from "@/components/finance/provider";
 import { summarize } from "@/lib/finance/model";
+import { cardReminders } from "@/lib/finance/india-rules";
+import { displayDate } from "@/lib/finance/region";
 
 const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -31,6 +34,7 @@ const nav = [
   { href: "/goals", label: "Goals", icon: Goal },
   { href: "/insights", label: "Insights", icon: Lightbulb },
   { href: "/accounts", label: "Accounts", icon: CreditCard },
+  { href: "/calculators", label: "Planning calculators", icon: Calculator },
 ];
 const actions = [
   { href: "/transactions?action=add", label: "Add a transaction", icon: Plus },
@@ -91,6 +95,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             copy: "Review the transactions or adjust your monthly limit.",
             href: "/budgets",
           })),
+        ...cardReminders(state.accounts).map((reminder) => ({
+          id: reminder.id,
+          title: `${reminder.name} payment due`,
+          copy: `Due ${displayDate(reminder.dueDate)}. Check your issuer's statement; payments are not automatically detected.`,
+          href: "/accounts",
+        })),
       ].filter((signal) => !state.dismissed.includes(signal.id))
     : [];
   const results = actions.filter((action) =>

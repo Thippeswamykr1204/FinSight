@@ -131,7 +131,7 @@
   }
 
   .control {
-    min-height: 42px;
+    min-height: 44px;
     border: 1px solid var(--line);
     border-radius: var(--radius-control);
     background: var(--surface);
@@ -168,6 +168,17 @@
   }
   .reveal-5 {
     animation-delay: 300ms;
+  }
+}
+
+@media (pointer: coarse) {
+  button,
+  a[role="button"],
+  summary {
+    min-height: 44px;
+  }
+  button {
+    min-width: 44px;
   }
 }
 

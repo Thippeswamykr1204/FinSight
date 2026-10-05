@@ -5,6 +5,8 @@ import { useState } from "react";
 import { ArrowUpRight, Lightbulb, ShieldCheck, TrendingUp } from "lucide-react";
 import { useFinance } from "@/components/finance/provider";
 import { PageHeading } from "@/components/finance/primitives";
+import { ReportShare } from "@/components/finance/report-share";
+import { reportShareText } from "@/lib/finance/report-share";
 import { financialYear, periodTotals, displayDate } from "@/lib/finance/region";
 import {
   cashFlow,
@@ -43,7 +45,11 @@ export default function InsightsPage() {
         eyebrow="Your point of view"
         title="The signal behind the numbers."
         description="Explainable observations, grounded in your recorded activity."
-      />
+      >
+        <ReportShare
+          text={reportShareText(fy.label, yearTotals, "Demo report")}
+        />
+      </PageHeading>
       <section className="surface p-7">
         <p className="eyebrow">
           {fy.label} · {displayDate(fy.start)} – {displayDate(fy.end)}

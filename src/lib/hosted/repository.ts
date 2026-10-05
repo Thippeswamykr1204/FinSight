@@ -142,6 +142,15 @@ export async function executeCommand(
     let result: unknown;
     let resourceId: string | undefined;
     switch (command.action) {
+      case "account.reminder": {
+        await existingAccount(db, workspaceId, command.id);
+        result = await db.financialAccount.update({
+          where: { id: command.id },
+          data: { dueDate: command.dueDate ? new Date(command.dueDate) : null },
+        });
+        resourceId = command.id;
+        break;
+      }
       case "account.create": {
         if (
           (await db.financialAccount.count({ where: { workspaceId } })) >= 100
@@ -152,7 +161,13 @@ export async function executeCommand(
             "You can track up to 100 accounts in this workspace.",
           );
         const account = await db.financialAccount.create({
-          data: { workspaceId, ...command.data },
+          data: {
+            workspaceId,
+            ...command.data,
+            dueDate: command.data.dueDate
+              ? new Date(command.data.dueDate)
+              : null,
+          },
         });
         result = account;
         resourceId = account.id;

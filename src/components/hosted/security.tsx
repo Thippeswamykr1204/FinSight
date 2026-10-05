@@ -21,6 +21,7 @@ import {
   PageHeading,
 } from "@/components/finance/primitives";
 import { download } from "@/lib/finance/import-export";
+import { DataRights } from "./data-rights";
 
 type Device = {
   token: string;
@@ -138,6 +139,7 @@ export function SecuritySettings() {
         description="Protect your account and review the devices with access."
       />
       <FormError error={error} />
+      <DataRights />
       {message && (
         <p
           role="status"

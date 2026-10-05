@@ -143,9 +143,9 @@ export default function SettingsPage() {
         <h3 className="text-lg font-semibold">Membership and security</h3>
         <p className="mt-3 text-sm leading-7 text-[var(--ink-soft)]">
           The demo does not create a paid membership or an online user account.
-          Hosted authentication, MFA, billing, and live bank connections are
-          still being built. There are no active sessions or payment methods to
-          manage here.
+          Hosted authentication and MFA are available in configured deployments
+          at /app. Billing and live bank connections are planned, not live. This
+          browser-local demo has no hosted sessions or payment methods.
         </p>
         <a
           href="/pricing"

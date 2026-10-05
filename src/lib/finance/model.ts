@@ -3,6 +3,23 @@ import { region, localDate } from "./region";
 export { money, toPaise, localDate } from "./region";
 
 export const categories = [
+  "Groceries",
+  "Dining",
+  "Rent",
+  "UPI/Transfers",
+  "Utilities",
+  "Mobile/DTH/Internet",
+  "Fuel",
+  "EMI/Loans",
+  "Insurance",
+  "Medical",
+  "Education/School fees",
+  "Domestic help",
+  "Entertainment",
+  "SIP/Mutual funds",
+  "Gold",
+  "Taxes",
+  "Donations/Gifts",
   "Home",
   "Food & dining",
   "Transport",
@@ -14,6 +31,23 @@ export const categories = [
   "Other",
 ] as const;
 export const categoryColors: Record<string, string> = {
+  Groceries: "#178457",
+  Dining: "#be603a",
+  Rent: "#4c6fff",
+  "UPI/Transfers": "#687c72",
+  Utilities: "#367d98",
+  "Mobile/DTH/Internet": "#8467ce",
+  Fuel: "#be603a",
+  "EMI/Loans": "#4c6fff",
+  Insurance: "#448079",
+  Medical: "#448079",
+  "Education/School fees": "#8467ce",
+  "Domestic help": "#367d98",
+  Entertainment: "#be5a84",
+  "SIP/Mutual funds": "#178457",
+  Gold: "#ac512a",
+  Taxes: "#687c72",
+  "Donations/Gifts": "#be5a84",
   Home: "#4c6fff",
   "Food & dining": "#178457",
   Transport: "#be603a",
@@ -59,10 +93,28 @@ export const goalSchema = z.object({
   target: paise.positive(),
   due: isoDate,
 });
+export const accountTypes = [
+  "Savings",
+  "Current",
+  "Credit Card",
+  "UPI wallet",
+  "FD",
+  "RD",
+  "PPF",
+  "EPF",
+  "NPS",
+  "Gold",
+  "Mutual funds",
+  "Loan",
+  "Cash",
+  "Credit",
+  "Investments",
+] as const;
 export const accountSchema = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(1).max(80),
-  type: z.enum(["Cash", "Credit", "Investments"]),
+  type: z.enum(accountTypes),
+  dueDate: isoDate.nullable().default(null),
   openingBalance: z
     .number()
     .int()
@@ -90,6 +142,12 @@ export type Budget = z.infer<typeof budgetSchema>;
 export type Goal = z.infer<typeof goalSchema>;
 export type Account = z.infer<typeof accountSchema>;
 export type FinanceState = z.infer<typeof stateSchema>;
+export const seasonalGoals = [
+  "Diwali buffer",
+  "School fees",
+  "Wedding season",
+  "Family festival travel",
+] as const;
 
 export function seedState(now = new Date()): FinanceState {
   const today = localDate(now);
@@ -98,19 +156,22 @@ export function seedState(now = new Date()): FinanceState {
     {
       id: "checking",
       name: "HDFC savings",
-      type: "Cash",
+      type: "Savings",
+      dueDate: null,
       openingBalance: 6100000,
     },
     {
       id: "card",
       name: "ICICI credit card",
-      type: "Credit",
+      type: "Credit Card",
+      dueDate: `${month}-20`,
       openingBalance: -980000,
     },
     {
       id: "investments",
       name: "Mutual fund portfolio",
-      type: "Investments",
+      type: "Mutual funds",
+      dueDate: null,
       openingBalance: 18240000,
     },
   ];
@@ -152,16 +213,16 @@ export function seedState(now = new Date()): FinanceState {
     "checking",
     "income",
   );
-  add("rent", "Bengaluru rent — UPI", 2800000, 1, "Home");
-  add("food1", "BigBasket groceries", 486250, 3, "Food & dining", "card");
-  add("food2", "Swiggy — UPI", 87500, 4, "Food & dining");
-  add("food3", "Nandini milk & vegetables — UPI", 162800, 2, "Food & dining");
-  add("emi", "Home loan EMI", 1850000, 3, "Home");
-  add("energy", "BESCOM electricity", 218000, 2, "Home");
+  add("rent", "Bengaluru rent — UPI", 2800000, 1, "Rent");
+  add("food1", "BigBasket groceries", 486250, 3, "Groceries", "card");
+  add("food2", "Swiggy — UPI", 87500, 4, "Dining");
+  add("food3", "Nandini milk & vegetables — UPI", 162800, 2, "Groceries");
+  add("emi", "Home loan EMI", 1850000, 3, "EMI/Loans");
+  add("energy", "BESCOM electricity", 218000, 2, "Utilities");
   add("travel", "IRCTC weekend trip", 286000, 3, "Travel", "card");
-  add("fuel", "Indian Oil fuel", 240000, 2, "Transport", "card");
-  add("recharge", "Jio recharge", 79900, 1, "Subscriptions");
-  add("sip", "Mutual fund SIP earmark", 1500000, 2, "Other");
+  add("fuel", "Indian Oil fuel", 240000, 2, "Fuel", "card");
+  add("recharge", "Jio recharge", 79900, 1, "Mobile/DTH/Internet");
+  add("sip", "Mutual fund SIP earmark", 1500000, 2, "SIP/Mutual funds");
   for (let back = 1; back <= 11; back++) {
     const prefix = localDate(
       new Date(now.getFullYear(), now.getMonth() - back, 1),
@@ -195,10 +256,10 @@ export function seedState(now = new Date()): FinanceState {
     transactions,
     accounts,
     budgets: [
-      { id: "b1", category: "Home", limit: 5200000, month },
-      { id: "b2", category: "Food & dining", limit: 1200000, month },
+      { id: "b1", category: "Rent", limit: 3000000, month },
+      { id: "b2", category: "Groceries", limit: 1200000, month },
       { id: "b3", category: "Transport", limit: 450000, month },
-      { id: "b4", category: "Subscriptions", limit: 150000, month },
+      { id: "b4", category: "Mobile/DTH/Internet", limit: 150000, month },
       { id: "b5", category: "Travel", limit: 500000, month },
     ],
     goals: [

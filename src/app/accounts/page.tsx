@@ -15,10 +15,12 @@ import { Button } from "@/components/ui/button";
 import {
   accountBalance,
   accountSchema,
+  accountTypes,
   money,
   summarize,
   toPaise,
 } from "@/lib/finance/model";
+import { displayDate } from "@/lib/finance/region";
 
 export default function AccountsPage() {
   const { state, update, notice } = useFinance();
@@ -40,6 +42,7 @@ export default function AccountsPage() {
         name: data.get("name"),
         type: data.get("type"),
         openingBalance: balance,
+        dueDate: data.get("dueDate") || null,
       });
       update((current) => ({
         ...current,
@@ -71,9 +74,10 @@ export default function AccountsPage() {
           <Plus size={15} className="mr-2" /> Add account
         </Button>
       </PageHeading>
+      <FormError error={error} />
       <section className="rounded-3xl bg-[#101b16] p-8 text-white">
         <p className="eyebrow text-white/65">Tracked net worth</p>
-        <p className="mt-5 text-5xl font-semibold tracking-tight">
+        <p className="mt-5 break-words text-[clamp(1.7rem,5vw,3rem)] font-semibold tracking-tight tabular-nums">
           {money(summary.balance, state.locale)}
         </p>
         <p className="mt-4 text-sm text-white/65">
@@ -95,6 +99,57 @@ export default function AccountsPage() {
             <p className="mt-1 text-xs text-[var(--ink-soft)]">
               Manual account · INR
             </p>
+            {account.dueDate && (
+              <p className="mt-3 text-xs text-[var(--ember)]">
+                Payment due {displayDate(account.dueDate)} · manual reminder
+              </p>
+            )}
+            {["Credit Card", "Credit"].includes(account.type) && (
+              <div className="mt-4 space-y-2">
+                <label className="block text-xs">
+                  Update payment reminder
+                  <input
+                    aria-label={`Payment due for ${account.name}`}
+                    type="date"
+                    value={account.dueDate ?? ""}
+                    className="control mt-2 w-full px-3"
+                    onChange={(event) => {
+                      const dueDate = event.target.value || null;
+                      try {
+                        update((current) => ({
+                          ...current,
+                          accounts: current.accounts.map((item) =>
+                            item.id === account.id
+                              ? { ...item, dueDate }
+                              : item,
+                          ),
+                        }));
+                        notice("Payment reminder updated.");
+                      } catch (caught) {
+                        setError(String(caught));
+                      }
+                    }}
+                  />
+                </label>
+                {account.dueDate && (
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      update((current) => ({
+                        ...current,
+                        accounts: current.accounts.map((item) =>
+                          item.id === account.id
+                            ? { ...item, dueDate: null }
+                            : item,
+                        ),
+                      }))
+                    }
+                  >
+                    Clear reminder after payment
+                  </Button>
+                )}
+              </div>
+            )}
             <p className="mt-7 text-3xl font-semibold tracking-tight">
               {money(accountBalance(state, account.id), state.locale)}
             </p>
@@ -176,10 +231,13 @@ export default function AccountsPage() {
           </Field>
           <Field label="Account type">
             <select name="type" className="control px-3">
-              <option>Cash</option>
-              <option>Credit</option>
-              <option>Investments</option>
+              {accountTypes.map((type) => (
+                <option key={type}>{type}</option>
+              ))}
             </select>
+          </Field>
+          <Field label="Next payment due date (optional; credit cards)">
+            <input type="date" name="dueDate" className="control px-3" />
           </Field>
           <Field label="Opening balance (INR; use a negative amount for debt)">
             <input

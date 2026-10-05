@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ChevronRight,
+  Calculator,
   Fingerprint,
   LayoutDashboard,
   LogOut,
@@ -80,6 +81,12 @@ export function HostedShell({
           </Link>
         ))}
       </nav>
+      <Link
+        href="/app/calculators"
+        className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm hover:bg-[var(--surface-muted)]"
+      >
+        <Calculator size={17} /> Planning calculators
+      </Link>
       <Link
         href="/app/security"
         className={`mt-7 flex items-center gap-3 rounded-xl px-3 py-3 text-sm ${path === "/app/security" ? "bg-[var(--mint)] text-[var(--mint-deep)]" : "hover:bg-[var(--surface-muted)]"}`}

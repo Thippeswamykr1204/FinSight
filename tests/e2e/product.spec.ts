@@ -221,6 +221,8 @@ test("public routes, finance screens, and mobile navigation are accessible", asy
   }
   await page.goto("/dashboard");
   await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator("body")).toHaveCSS("color", "rgb(242, 247, 244)");
   const dark = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
     .analyze();

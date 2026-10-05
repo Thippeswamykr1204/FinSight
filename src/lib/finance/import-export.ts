@@ -1,5 +1,6 @@
 import { categories, isoDate, toPaise, type Transaction } from "./model";
 import { region, displayDate } from "./region";
+import { suggestCategory, upiReference } from "./india-rules";
 
 function csvRows(input: string): string[][] {
   const rows: string[][] = [];
@@ -56,7 +57,7 @@ export function parseStatement(
         date: `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)}`,
         merchant: get(block, "NAME") || get(block, "MEMO"),
         amount: get(block, "TRNAMT"),
-        category: "Other",
+        category: "",
         type: get(block, "TRNAMT").startsWith("-") ? "expense" : "income",
       };
     });
@@ -102,7 +103,7 @@ export function parseStatement(
         categories.find(
           (category) =>
             category.toLowerCase() === record.category?.toLowerCase(),
-        ) ?? (type === "income" ? "Income" : "Other");
+        ) ?? suggestCategory(merchant, type);
       return {
         merchant,
         amount,
@@ -112,7 +113,11 @@ export function parseStatement(
         type,
         category,
         accountId,
-        note: record.note ?? "Imported statement",
+        note:
+          record.note ||
+          (upiReference(merchant)
+            ? `UPI reference: ${upiReference(merchant)}`
+            : "Imported statement"),
       };
     } catch (error) {
       throw new Error(

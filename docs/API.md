@@ -19,12 +19,15 @@ Success envelope: `data` plus `requestId`. Error envelope: `error.code`, `error.
 | POST | `/api/v1/invitations/accept` | Verified invited email; single-use, unexpired token |
 | GET | `/api/v1/workspaces/{id}/audit` | Admin/owner; latest 100 audit events |
 | GET | `/api/v1/workspaces/{id}/export` | Owner; consistent JSON snapshot plus audit event |
+| DELETE | `/api/v1/workspaces/{id}` | Owner + sign-in within 10 minutes; confirmation `DELETE {exact name}`; permanent ledger cascade |
+| GET | `/api/v1/me` | Personal profile, recorded notice acceptance, memberships and security metadata; no authentication secrets |
+| DELETE | `/api/v1/me` | Recent sign-in; confirmation `DELETE MY ACCOUNT`; rejects while the user owns workspaces |
 
-Identity endpoints are handled by Better Auth under `/api/identity`. The previous `/api/auth/login` endpoint remains disabled legacy behavior and is not the new sign-in path.
+Identity endpoints are handled by Better Auth under `/api/identity`. Signup requires `noticeAccepted: true`; the current policy version/time are server-assigned, not client-controlled. Earlier users have no fabricated consent record. External OAuth creation without prior acceptance is refused. The previous `/api/auth/login` endpoint remains disabled legacy behavior and is not the new sign-in path.
 
 ## Finance command contract
 
-See `src/lib/hosted/contracts.ts` for the runtime-validated discriminated union. Supported actions are `account.create`, `transaction.create`, `transaction.update`, `transaction.delete`, `transaction.import`, `budget.set`, `budget.delete`, `goal.create`, and `goal.contribute`.
+See `src/lib/hosted/contracts.ts` for the runtime-validated discriminated union. Supported actions are `account.create`, `account.reminder`, `transaction.create`, `transaction.update`, `transaction.delete`, `transaction.import`, `budget.set`, `budget.delete`, `goal.create`, and `goal.contribute`. Manual account types include Savings, Current, Credit Card, UPI wallet, FD, RD, PPF, EPF, NPS, Gold, Mutual funds and Loan; legacy type labels remain valid. `dueDate` is nullable ISO; `account.reminder` updates/clears it using an account `id`.
 
 - New workspaces use integer INR paise, never floating-point rupee values (₹123.45 = 12345). Currency is explicit on workspace exports and CSV; imports reject non-INR. Stored dates are ISO YYYY-MM-DD, displayed as DD/MM/YYYY in Asia/Kolkata. Financial years run April–March.
 - Funded legacy USD workspaces preserve original minor units and are read-only (`409 LEGACY_CURRENCY_READ_ONLY` on finance commands). No exchange rate or silent reinterpretation is applied.

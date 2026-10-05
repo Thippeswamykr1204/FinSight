@@ -5,11 +5,19 @@ import {
   goalSchema,
   transactionSchema,
   paise,
+  type Account,
 } from "@/lib/finance/model";
 
 export const id = z.string().min(1).max(100);
 export const newTransaction = transactionSchema.omit({ id: true }).strict();
 export const commandSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("account.reminder"),
+      id,
+      dueDate: accountSchema.shape.dueDate,
+    })
+    .strict(),
   z
     .object({
       action: z.literal("account.create"),
@@ -82,7 +90,8 @@ export const memberRoleSchema = z
 export interface HostedAccount {
   id: string;
   name: string;
-  type: "Cash" | "Credit" | "Investments";
+  type: Account["type"];
+  dueDate: string | null;
   openingBalance: number;
   balance: number;
 }

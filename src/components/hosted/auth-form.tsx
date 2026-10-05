@@ -58,6 +58,7 @@ export function AuthForm({
           name,
           email,
           password,
+          noticeAccepted: true,
           callbackURL: "/sign-in?verified=1",
         });
         if (result.error) throw new Error(result.error.message);
@@ -293,6 +294,27 @@ export function AuthForm({
                       className="control px-3 text-center tracking-widest"
                     />
                   </Field>
+                )}
+                {mode === "sign-up" && (
+                  <label className="flex items-start gap-3 text-xs leading-6">
+                    <input
+                      type="checkbox"
+                      required
+                      className="mt-1 h-4 w-4 shrink-0"
+                      aria-label="Accept privacy notice and terms"
+                    />
+                    <span>
+                      I am 18 or older and agree to the{" "}
+                      <Link href="/terms" className="underline">
+                        terms
+                      </Link>{" "}
+                      and the processing described in the{" "}
+                      <Link href="/privacy" className="underline">
+                        privacy notice
+                      </Link>
+                      . No marketing or bank-sync consent is included.
+                    </span>
+                  </label>
                 )}
                 <FormError error={error} />
                 {message && (

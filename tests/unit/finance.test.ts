@@ -57,7 +57,7 @@ describe("financial domain", () => {
     expect(
       budgetSchema.safeParse({
         id: "x",
-        category: "Home",
+        category: "Rent",
         limit: 100,
         month: "2026-13",
       }).success,
@@ -77,7 +77,7 @@ describe("financial domain", () => {
         id: "expense",
         amount: 25000,
         type: "expense",
-        category: "Home",
+        category: "Rent",
       },
     ];
     const summary = summarize(state, "2026-10");
@@ -85,7 +85,7 @@ describe("financial domain", () => {
     expect(summary.expenses).toBe(25000);
     expect(summary.saved).toBe(75000);
     expect(
-      summary.budgets.find((budget) => budget.category === "Home")?.spent,
+      summary.budgets.find((budget) => budget.category === "Rent")?.spent,
     ).toBe(25000);
     expect(accountBalance(state, "checking")).toBe(6175000);
     expect(accountBalance(state, "missing")).toBe(0);
