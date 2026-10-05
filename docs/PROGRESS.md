@@ -31,9 +31,18 @@ Phase 1: `npm run check` passes (lint, typecheck, 19 unit tests, coverage 96.11%
 
 Verification: `npm run check` passes, 23 unit tests with 96.8% statement coverage; production demo Playwright 9 tests and hosted Playwright 10 tests, including deletion/notice/negative tenant and stale-session cases. The phase 1 passing checkpoint was phase 2's pre-change baseline.
 
-## Next phases
+## Phase 3 — completed with explicit external limits
 
-3. Consolidate environment, production containers/CI/security, deploy runbooks and container smoke verification.
+- Consolidated `.env.example`, ignored/excluded local secret/tooling artifacts, mode-0600 fresh local credentials and explicit public hosted boot validation. Historical external credential revocation cannot be done without provider administrative access and remains outstanding.
+- One 134 MB standalone app/worker image (local ARM64 measurement), a separate non-root migrator target, production Compose profiles for hosted Postgres/migration/worker and optional Redis. The worker is independently bundled; a Next trace-only CJS dependency failure was discovered and fixed by the actual container smoke.
+- Nonced hosted/auth script CSP, explicit cookie attributes, HSTS, validated single-IP proxy handling, database readiness and durable-worker retention cleanup.
+- CI covers install, formatting, lint/types, coverage, build, both production browser suites, runtime audit and demo/hosted container smoke; full audit reports its known build-tool exception. GitHub execution is not claimed.
+- Source-checked Vercel/Neon and Docker/AWS Mumbai deploy paths include domain/TLS, SMTP, safe migrations, worker, backups, rollback and smoke checks. Neon currently has no Mumbai region; the Vercel/Neon path is explicitly not India-only residency.
+
+Verified locally: `npm run check`, 26 unit tests (including Kolkata/UTC month rollover), 9 demo + 10 hosted production browser tests (including CSP nonce/hydration and HttpOnly/SameSite cookie assertions), non-root demo container health, missing-config boot failure, fresh hosted migration job, app/worker health, real standalone worker SMTP delivery/body erasure, container signup/verification/INR ledger mutation and logical dump/restore with paise totals checked. Caddy configuration validation passed. Runtime audit: zero vulnerabilities. Full audit: 7 high development-only braces-chain findings; documented, not falsely reported as clean. The phase 2 passing checkpoint was the pre-change baseline.
+
+## Next phase
+
 4. Generate real INR screenshots and replace the README with verified commands and honest feature status.
 
 ## External / operational limitations

@@ -8,7 +8,7 @@ The local launcher explicitly sets `HOSTED_DATABASE_URL`; it never migrates the 
 
 Local auth secrets are generated with cryptographic randomness and saved with mode 0600 under ignored `.local/`. These values are never printed. Deleting that directory invalidates local sessions and makes any still-pending encrypted email unreadable.
 
-The original `npm run dev` remains the no-configuration browser demo. `/dashboard` and related routes use local storage; `/app` and its children use authenticated database records. Hosted failures never fall back to sample data. `.env.hosted.example` lists the configuration for a separately hosted deployment.
+The original `npm run dev` remains the no-configuration browser demo. `/dashboard` and related routes use local storage; `/app` and its children use authenticated database records. Hosted failures never fall back to sample data. The consolidated `.env.example` lists every demo/hosted/container setting; [DEPLOYMENT](DEPLOYMENT.md) covers both operational paths.
 
 ## Implemented identity flows
 

@@ -152,6 +152,8 @@ export const seasonalGoals = [
 export function seedState(now = new Date()): FinanceState {
   const today = localDate(now);
   const month = today.slice(0, 7);
+  const year = Number(today.slice(0, 4));
+  const monthIndex = Number(today.slice(5, 7)) - 1;
   const accounts: Account[] = [
     {
       id: "checking",
@@ -225,7 +227,7 @@ export function seedState(now = new Date()): FinanceState {
   add("sip", "Mutual fund SIP earmark", 1500000, 2, "SIP/Mutual funds");
   for (let back = 1; back <= 11; back++) {
     const prefix = localDate(
-      new Date(now.getFullYear(), now.getMonth() - back, 1),
+      new Date(Date.UTC(year, monthIndex - back, 1)),
     ).slice(0, 7);
     transactions.push({
       id: `income-${back}`,
@@ -268,21 +270,21 @@ export function seedState(now = new Date()): FinanceState {
         name: "Emergency fund",
         saved: 24000000,
         target: 40000000,
-        due: localDate(new Date(now.getFullYear(), now.getMonth() + 6, 1)),
+        due: localDate(new Date(Date.UTC(year, monthIndex + 6, 1))),
       },
       {
         id: "g2",
         name: "Coorg family holiday",
         saved: 2180000,
         target: 6000000,
-        due: localDate(new Date(now.getFullYear(), now.getMonth() + 8, 1)),
+        due: localDate(new Date(Date.UTC(year, monthIndex + 8, 1))),
       },
       {
         id: "g3",
         name: "New studio setup",
         saved: 920000,
         target: 12500000,
-        due: localDate(new Date(now.getFullYear(), now.getMonth() + 12, 1)),
+        due: localDate(new Date(Date.UTC(year, monthIndex + 12, 1))),
       },
     ],
     onboarded: false,
@@ -368,19 +370,22 @@ export function summarize(
   };
 }
 
-export function cashFlow(state: FinanceState, months: number) {
-  const now = new Date();
+export function cashFlow(
+  state: FinanceState,
+  months: number,
+  now = new Date(),
+) {
+  const today = localDate(now);
+  const year = Number(today.slice(0, 4));
+  const monthIndex = Number(today.slice(5, 7)) - 1;
   return Array.from({ length: months }, (_, index) => {
-    const date = new Date(
-      now.getFullYear(),
-      now.getMonth() - months + index + 1,
-      1,
-    );
+    const date = new Date(Date.UTC(year, monthIndex - months + index + 1, 1));
     const summary = summarize(state, localDate(date).slice(0, 7));
     return {
-      month: new Intl.DateTimeFormat(state.locale, { month: "short" }).format(
-        date,
-      ),
+      month: new Intl.DateTimeFormat(state.locale, {
+        month: "short",
+        timeZone: region.timeZone,
+      }).format(date),
       income: summary.income / 100,
       expenses: summary.expenses / 100,
       saved: summary.saved / 100,

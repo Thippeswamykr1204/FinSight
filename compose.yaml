@@ -1,17 +1,94 @@
+name: finsight
+x-hosted-env: &hosted-env
+  HOSTED_ENABLED: ${HOSTED_ENABLED:-false}
+  HOSTED_LOCAL: ${HOSTED_LOCAL:-false}
+  HOSTED_DATABASE_URL: ${HOSTED_DATABASE_URL:-postgresql://finsight:${POSTGRES_PASSWORD:-}@postgres:5432/finsight}
+  BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  EMAIL_FROM: ${EMAIL_FROM:-}
+  PRIVACY_CONTACT_EMAIL: ${PRIVACY_CONTACT_EMAIL:-}
+  GRIEVANCE_OFFICER_NAME: ${GRIEVANCE_OFFICER_NAME:-}
+  TRUSTED_IP_HEADER: ${TRUSTED_IP_HEADER:-}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+  APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
+  ENABLE_LEGACY_API: "false"
+x-hardening: &hardening
+  init: true
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  read_only: true
+  tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+
 services:
-  web:
+  app:
+    <<: *hardening
+    image: ${FINSIGHT_IMAGE:-finsight:local}
     build:
       context: .
+      target: runner
       args:
-        NEXT_PUBLIC_APP_URL: http://localhost:3000
-    ports:
-      - "${FINSIGHT_PORT:-3000}:3000"
-    environment:
-      NEXT_PUBLIC_APP_URL: http://localhost:3000
-      ENABLE_LEGACY_API: "false"
-    init: true
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    environment: *hosted-env
+    ports: ["127.0.0.1:${FINSIGHT_PORT:-3000}:3000"]
     restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+        required: false
+  postgres:
+    profiles: [hosted]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: finsight
+      POSTGRES_DB: finsight
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U finsight -d finsight"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    <<: *hardening
+    profiles: [hosted]
+    image: ${FINSIGHT_IMAGE:-finsight:local}-migrator
+    build:
+      context: .
+      target: migrator
+    environment: *hosted-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+  email-worker:
+    <<: *hardening
+    profiles: [hosted]
+    image: ${FINSIGHT_IMAGE:-finsight:local}
+    command: [node, dist/email-worker.cjs]
+    environment: *hosted-env
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, node, -e, "const fs=require('fs');process.exit(Date.now()-Number(fs.readFileSync('/tmp/finsight-email-worker-heartbeat','utf8'))<60000?0:1)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+  redis:
+    profiles: [redis]
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command: [sh, -c, 'test -n "$$REDIS_PASSWORD" && exec redis-server --requirepass "$$REDIS_PASSWORD" --save "" --appendonly no']
+    restart: unless-stopped
+    # Reserved for legacy cache use. Hosted limits and email use PostgreSQL.
+volumes:
+  postgres-data:

@@ -3,6 +3,7 @@ import { hostedAuth } from "@/lib/hosted/auth";
 import { deliverEmailBatch } from "@/lib/hosted/email";
 import { isHostedEnabled } from "@/lib/hosted/config";
 import { HttpError, readTextBody } from "@/lib/hosted/http";
+import { isIP } from "node:net";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,11 +22,12 @@ async function handle(request: Request) {
     const body = request.body ? await readTextBody(request, 64_000) : undefined;
     const headers = new Headers(request.headers);
     // Trust a proxy header only when explicitly configured and sanitized at ingress.
+    const candidate = process.env.TRUSTED_IP_HEADER
+      ? (request.headers.get(process.env.TRUSTED_IP_HEADER)?.trim() ?? "")
+      : "";
     headers.set(
       "x-finsight-client-ip",
-      process.env.TRUSTED_IP_HEADER
-        ? request.headers.get(process.env.TRUSTED_IP_HEADER) || "127.0.0.1"
-        : "127.0.0.1",
+      isIP(candidate) ? candidate : "127.0.0.1",
     );
     const response = await hostedAuth().handler(
       new Request(request, {

@@ -1,0 +1,5 @@
+# Test-only SMTP sink. Public deployments use a verified TLS SMTP provider.
+services:
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports: ["127.0.0.1:18026:8025"]

@@ -10,7 +10,7 @@ import {
   toPaise,
 } from "../../src/lib/finance/region";
 import { restoreDemo } from "../../src/lib/finance/storage";
-import { seedState } from "../../src/lib/finance/model";
+import { seedState, cashFlow } from "../../src/lib/finance/model";
 import { exportCsv, parseStatement } from "../../src/lib/finance/import-export";
 
 describe("India money and calendar", () => {
@@ -107,6 +107,22 @@ describe("India money and calendar", () => {
       false,
     );
     expect(() => restoreDemo(legacy, null)).toThrow();
+  });
+  it("seeds history and charts in the Kolkata month across the UTC month boundary", () => {
+    const instant = new Date("2026-03-31T18:30:00Z");
+    const state = seedState(instant);
+    expect(state.transactions.find((row) => row.id === "salary")!.date).toBe(
+      "2026-04-01",
+    );
+    expect(state.transactions.find((row) => row.id === "income-1")!.date).toBe(
+      "2026-03-01",
+    );
+    expect(cashFlow(state, 3, instant).map((row) => row.month)).toEqual([
+      "Feb",
+      "Mar",
+      "Apr",
+    ]);
+    expect(state.goals[0].due).toBe("2026-10-01");
   });
   it("imports Indian dates and commas, exports explicit INR and rejects foreign currency", () => {
     const rows = parseStatement(

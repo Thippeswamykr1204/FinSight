@@ -12,11 +12,26 @@ const nextConfig = {
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
+          ...(process.env.NODE_ENV === "production"
+            ? [
+                {
+                  key: "Strict-Transport-Security",
+                  value: "max-age=31536000; includeSubDomains",
+                },
+              ]
+            : []),
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
           },
+        ],
+      },
+      {
+        // Dynamic hosted/auth routes receive their nonce policy from middleware.
+        source:
+          "/:path((?!app(?:/|$)|sign-in(?:/|$)|sign-up(?:/|$)|auth(?:/|$)).*)",
+        headers: [
           {
             key: "Content-Security-Policy",
             value:

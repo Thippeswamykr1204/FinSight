@@ -13,3 +13,6 @@ docs
 tests
 src/generated
 .local
+skills-lock.json
+dist
+{prisma,src

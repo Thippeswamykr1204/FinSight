@@ -2,7 +2,7 @@ name: Quality
 on:
   pull_request:
   push:
-    branches: [main, rebuild/v2]
+    branches: [main, rebuild/v2, feat/india-inr]
 permissions:
   contents: read
 concurrency:
@@ -28,6 +28,9 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:coverage
       - run: npm audit --omit=dev --audit-level=high
+      - name: Full dependency advisory report (build-tool exception documented in SECURITY)
+        run: npm audit --audit-level=high
+        continue-on-error: true
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
@@ -42,13 +45,19 @@ jobs:
           name: browser-failure-artifacts
           path: test-results/
           retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unit-coverage
+          path: coverage/
+          retention-days: 7
   container:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - run: docker compose build
-      - run: docker compose up -d --wait
-      - run: curl --fail http://localhost:3000/api/health
-      - run: docker compose down
-        if: always()
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: docker build -t finsight:local .
+      - run: mkdir -p .local
+      - run: npm run test:container

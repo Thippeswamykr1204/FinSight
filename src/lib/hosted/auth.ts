@@ -20,6 +20,11 @@ function createAuth() {
     advanced: {
       cookiePrefix: "finsight-v2",
       useSecureCookies: new URL(config.origin).protocol === "https:",
+      defaultCookieAttributes: {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: new URL(config.origin).protocol === "https:",
+      },
       ipAddress: { ipAddressHeaders: ["x-finsight-client-ip"] },
     },
     session: {

@@ -18,7 +18,14 @@ test("a real account verifies email, creates a workspace, and persists financial
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setExtraHTTPHeaders({ "x-test-forwarded-ip": clientIP() });
-  await page.goto("/sign-up");
+  const signupPage = await page.goto("/sign-up");
+  const csp = signupPage!.headers()["content-security-policy"];
+  expect(csp).toMatch(/script-src[^;]*'nonce-/);
+  expect(csp.split("script-src")[1].split(";")[0]).not.toContain(
+    "unsafe-inline",
+  );
+  const nonce = csp.match(/'nonce-([^']+)'/)![1];
+  expect(await signupPage!.text()).toContain(`nonce="${nonce}"`);
   await page.getByLabel("Your name").fill("Morgan");
   await page.getByLabel("Email address").fill(address);
   await page.getByLabel(/^Password/).fill(password);
@@ -36,6 +43,11 @@ test("a real account verifies email, creates a workspace, and persists financial
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL(`${origin}/app`);
+  const cookies = await page.context().cookies();
+  const sessionCookie = cookies.find((cookie) =>
+    cookie.name.endsWith("session_token"),
+  );
+  expect(sessionCookie).toMatchObject({ httpOnly: true, sameSite: "Lax" });
   await page
     .getByRole("button", { name: "Create your first workspace" })
     .click();

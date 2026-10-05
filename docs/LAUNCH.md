@@ -2,7 +2,7 @@
 
 ## Release status
 
-The current branch contains a verified interactive demo and a verified hosted identity/tenant-persistence foundation. It is not the requested revenue-generating hosted SaaS yet. Billing/entitlements, live provider verification, data-rights operations and production infrastructure remain the critical path.
+The current branch contains an India-first interactive demo, real hosted identity/tenant persistence, planning tools, notice acceptance and self-service primary-store data rights. Production containers, release migrations, worker/CI and two source-checked deploy runbooks are present and locally exercised. Public deployment, historical provider credential revocation, legal/retention operations and billing/provider approvals remain the commercial launch boundary.
 
 ## Demo release checklist
 
@@ -33,8 +33,10 @@ The current branch contains a verified interactive demo and a verified hosted id
 - [x] Versioned session-authenticated API, cursor pagination, bounded payloads, shared rate limits and idempotent finance mutations.
 - [ ] Scoped public API keys, signed outgoing webhooks and OpenAPI contract tests.
 - [x] Owner-authorized hosted financial JSON export.
-- [ ] Full data-subject export/deletion across identity, all hosted stores and providers.
-- [ ] Tracing, central logs, SLO alerts, load tests, CI/CD deployment, IaC, backups and restore exercise. Request IDs/redacted API logs and CI configuration are present.
+- [x] Personal export, owner-controlled workspace deletion and fresh-session account deletion across primary identity/ledger stores.
+- [ ] Operator grievance/correction/nomination process, processor logs/email and encrypted-backup deletion/expiry.
+- [x] Non-root demo/hosted Docker delivery, release migration job, bundled email worker, CI gates and local container smoke.
+- [ ] Public deploy, tracing/central logs, SLO alerts, load tests, IaC and a target-region PITR restore exercise.
 - [ ] Legal entity/contacts, reviewed terms, privacy notice and provider agreements.
 
 ## Pricing hypothesis
