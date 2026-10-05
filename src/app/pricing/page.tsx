@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Planned memberships" };
 const plans = [
   {
     name: "Free",
-    price: "$0",
+    price: "₹0",
     subtitle: "Build your first financial habit.",
     features: [
       "One personal workspace",
@@ -18,7 +18,7 @@ const plans = [
   },
   {
     name: "Pro",
-    price: "$9",
+    price: "₹299",
     subtitle: "A more complete point of view.",
     features: [
       "Unlimited manual transactions",
@@ -29,7 +29,7 @@ const plans = [
   },
   {
     name: "Business",
-    price: "$24",
+    price: "₹799",
     subtitle: "Clarity for a small team.",
     features: [
       "Up to five workspace members",
@@ -72,7 +72,8 @@ export default function PricingPage() {
               </span>
             </p>
             <p className="mt-3 text-xs text-[var(--ink-soft)]">
-              Planned USD monthly price, before tax
+              Planned INR monthly price + 18% GST (₹352.82 Pro / ₹942.82
+              Business including GST). Checkout is not live.
             </p>
             <ul className="my-8 space-y-4">
               {plan.features.map((feature) => (

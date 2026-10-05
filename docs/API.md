@@ -26,7 +26,8 @@ Identity endpoints are handled by Better Auth under `/api/identity`. The previou
 
 See `src/lib/hosted/contracts.ts` for the runtime-validated discriminated union. Supported actions are `account.create`, `transaction.create`, `transaction.update`, `transaction.delete`, `transaction.import`, `budget.set`, `budget.delete`, `goal.create`, and `goal.contribute`.
 
-- Money uses integer USD cents, never floating-point dollar values.
+- New workspaces use integer INR paise, never floating-point rupee values (₹123.45 = 12345). Currency is explicit on workspace exports and CSV; imports reject non-INR. Stored dates are ISO YYYY-MM-DD, displayed as DD/MM/YYYY in Asia/Kolkata. Financial years run April–March.
+- Funded legacy USD workspaces preserve original minor units and are read-only (`409 LEGACY_CURRENCY_READ_ONLY` on finance commands). No exchange rate or silent reinterpretation is applied.
 - Dates use `YYYY-MM-DD`; budget periods use `YYYY-MM`.
 - Commands require an `Idempotency-Key` of 8–128 alphanumeric, hyphen or underscore characters. A random UUID is suitable.
 - Reuse the key when retrying an identical request. Changing the payload with the same key produces 409.

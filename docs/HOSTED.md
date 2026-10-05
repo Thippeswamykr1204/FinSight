@@ -29,7 +29,7 @@ Register provider callback URLs at `/api/identity/callback/google` and `/api/ide
 
 The v2 schema/migrations live in `prisma/hosted`, with a separately generated Prisma client in ignored `src/generated/hosted`. Tables use the `v2_` prefix. The legacy two-table schema is retained unchanged; there is no automatic conversion or destructive migration of its Float money columns.
 
-All new ledger amounts are integer minor units in PostgreSQL BIGINT, bounded to safe JSON arithmetic. Foreign keys link a transaction to `(workspaceId, accountId)`, so a transaction cannot reference an account belonging to another workspace even if application validation is bypassed. SQL constraints enforce positive transaction amounts, account types, goal bounds and the current USD-only currency contract.
+All new ledger amounts are integer INR paise in PostgreSQL BIGINT, bounded to safe JSON arithmetic. Foreign keys link a transaction to `(workspaceId, accountId)`, so a transaction cannot reference an account belonging to another workspace even if application validation is bypassed. SQL constraints enforce positive transaction amounts, account types and goal bounds. The additive India migration defaults to INR and only updates financially empty legacy workspaces. Funded USD workspaces keep their original currency and amounts and become read-only in the application. There is no FX conversion. The original applied migration is immutable.
 
 Workspace roles are owner, admin, editor and viewer. Membership is resolved from the authenticated user on the server. Every query includes workspace scope; every mutation rechecks permission inside a workspace-serialized transaction. A revoked membership cannot retain write authority from a stale UI.
 

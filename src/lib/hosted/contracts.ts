@@ -4,7 +4,7 @@ import {
   budgetSchema,
   goalSchema,
   transactionSchema,
-  cents,
+  paise,
 } from "@/lib/finance/model";
 
 export const id = z.string().min(1).max(100);
@@ -57,7 +57,7 @@ export const commandSchema = z.discriminatedUnion("action", [
     .object({
       action: z.literal("goal.contribute"),
       id,
-      amount: cents.positive(),
+      amount: paise.positive(),
     })
     .strict(),
 ]);
@@ -112,6 +112,14 @@ export interface HostedGoal {
   due: string;
 }
 export interface Overview {
+  financialYear: {
+    label: string;
+    start: string;
+    end: string;
+    income: number;
+    expenses: number;
+    saved: number;
+  };
   workspace: { id: string; name: string; currency: string; revision: number };
   role: "OWNER" | "ADMIN" | "EDITOR" | "VIEWER";
   income: number;

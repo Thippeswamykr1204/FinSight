@@ -19,7 +19,7 @@ import {
   localDate,
   money,
   summarize,
-  toCents,
+  toPaise,
   type Budget,
 } from "@/lib/finance/model";
 
@@ -40,7 +40,7 @@ export default function BudgetsPage() {
       const budget = budgetSchema.parse({
         id: editing?.id ?? crypto.randomUUID(),
         category: data.get("category"),
-        limit: toCents(String(data.get("amount"))),
+        limit: toPaise(String(data.get("amount"))),
         month,
       });
       update((current) => ({
@@ -104,7 +104,7 @@ export default function BudgetsPage() {
             Your spending plan
           </h3>
           <span className="text-xs text-[var(--ink-soft)]">
-            {budgets.length} categories · USD
+            {budgets.length} categories · INR
           </span>
         </div>
         {!budgets.length ? (
@@ -209,7 +209,7 @@ export default function BudgetsPage() {
         open={open}
         onClose={() => setOpen(false)}
         title={editing ? "Edit budget" : "Create a budget"}
-        description={`Set a monthly USD limit for ${month}.`}
+        description={`Set a monthly INR limit for ${month}.`}
       >
         <form key={editing?.id ?? "new"} onSubmit={save} className="space-y-4">
           <Field label="Category">
@@ -225,7 +225,7 @@ export default function BudgetsPage() {
                 ))}
             </select>
           </Field>
-          <Field label="Monthly limit (USD)">
+          <Field label="Monthly limit (INR)">
             <input
               required
               name="amount"

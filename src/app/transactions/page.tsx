@@ -1,4 +1,5 @@
 "use client";
+import { displayDate } from "@/lib/finance/region";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -18,7 +19,7 @@ import {
   localDate,
   money,
   summarize,
-  toCents,
+  toPaise,
   transactionSchema,
   type Transaction,
 } from "@/lib/finance/model";
@@ -80,7 +81,7 @@ function Transactions() {
       const transaction = transactionSchema.parse({
         id: editing?.id ?? crypto.randomUUID(),
         merchant: form.get("merchant"),
-        amount: toCents(String(form.get("amount"))),
+        amount: toPaise(String(form.get("amount"))),
         date: form.get("date"),
         type: form.get("type"),
         category: form.get("category"),
@@ -220,7 +221,7 @@ function Transactions() {
           </select>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full table-fixed text-left text-sm sm:table-auto">
             <thead className="bg-[var(--surface-raised)] text-xs text-[var(--ink-soft)]">
               <tr>
                 <th className="px-5 py-3 font-medium">Transaction</th>
@@ -230,8 +231,10 @@ function Transactions() {
                 <th className="hidden px-4 py-3 font-medium sm:table-cell">
                   Date
                 </th>
-                <th className="px-4 py-3 text-right font-medium">Amount</th>
-                <th className="px-4 py-3">
+                <th className="w-[130px] px-2 py-3 text-right font-medium sm:w-auto sm:px-4">
+                  Amount
+                </th>
+                <th className="w-11 px-2 py-3 sm:w-auto sm:px-4">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
@@ -242,7 +245,7 @@ function Transactions() {
                   key={transaction.id}
                   className="border-t hover:bg-[var(--surface-raised)]"
                 >
-                  <td className="max-w-[230px] px-5 py-4">
+                  <td className="max-w-[230px] px-3 py-4 sm:px-5">
                     <div className="flex items-center gap-3">
                       <span className="hidden h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--surface-muted)] text-xs font-bold sm:grid">
                         {transaction.merchant.slice(0, 2).toUpperCase()}
@@ -254,7 +257,7 @@ function Transactions() {
                             setError("");
                             setOpen(true);
                           }}
-                          className="block max-w-full truncate text-left font-semibold hover:text-[var(--mint-deep)]"
+                          className="block max-w-full break-words text-left font-semibold hover:text-[var(--mint-deep)] sm:truncate"
                         >
                           {transaction.merchant}
                         </button>
@@ -278,14 +281,10 @@ function Transactions() {
                     {transaction.category}
                   </td>
                   <td className="hidden whitespace-nowrap px-4 py-4 text-xs text-[var(--ink-soft)] sm:table-cell">
-                    {new Intl.DateTimeFormat(state.locale, {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    }).format(new Date(`${transaction.date}T12:00:00`))}
+                    {displayDate(transaction.date)}
                   </td>
                   <td
-                    className={`whitespace-nowrap px-4 py-4 text-right font-semibold tabular-nums ${transaction.type === "income" ? "text-[var(--mint-deep)]" : ""}`}
+                    className={`whitespace-nowrap px-2 py-4 text-right font-semibold tabular-nums sm:px-4 ${transaction.type === "income" ? "text-[var(--mint-deep)]" : ""}`}
                   >
                     {transaction.type === "income" ? "+" : "−"}
                     {money(transaction.amount, state.locale)}
@@ -363,7 +362,7 @@ function Transactions() {
         open={open}
         onClose={() => setOpen(false)}
         title={editing ? "Edit transaction" : "Add a transaction"}
-        description="Demo changes are saved on this device. All amounts are in USD."
+        description="Demo changes are saved on this device. Amounts are rupees, stored as integer paise."
       >
         {!state.accounts.length ? (
           <Empty
@@ -390,7 +389,7 @@ function Transactions() {
               />
             </Field>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Amount (USD)">
+              <Field label="Amount (INR)">
                 <input
                   name="amount"
                   required
@@ -505,7 +504,9 @@ function Transactions() {
           <p className="rounded-xl bg-[var(--surface-muted)] p-3 text-xs leading-6">
             CSV columns: <code>date,merchant,amount,type,category</code>
             <br />
-            Date format: YYYY-MM-DD. Amounts use decimals (123.45). USD only.
+            Dates: DD/MM/YYYY or YYYY-MM-DD. Amounts are INR rupees (123.45 or
+            quoted Indian commas). Include a currency column to identify the
+            statement currency.
           </p>
           <Field label="Destination account">
             <select
@@ -560,7 +561,7 @@ function Transactions() {
                     className="flex justify-between gap-3 border-t py-2"
                   >
                     <span>
-                      {row.date} · {row.merchant}
+                      {displayDate(row.date)} · {row.merchant}
                     </span>
                     <span>{money(row.amount)}</span>
                   </p>

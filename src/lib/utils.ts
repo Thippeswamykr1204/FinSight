@@ -2,15 +2,16 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { format } from "date-fns";
 import type { Category, TransactionType } from "@/types";
+import { region, displayDate } from "@/lib/finance/region";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-IN", {
+  return new Intl.NumberFormat(region.locale, {
     style: "currency",
-    currency: "INR",
+    currency: region.currency,
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount);
@@ -18,10 +19,10 @@ export function formatCurrency(amount: number): string {
 
 export function formatMoney(
   amount: number,
-  currency = "USD",
+  currency: string = region.currency,
   options?: Intl.NumberFormatOptions,
 ): string {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat(region.locale, {
     style: "currency",
     currency,
     maximumFractionDigits: 2,
@@ -30,7 +31,7 @@ export function formatMoney(
 }
 
 export function formatDate(date: Date | string): string {
-  return format(new Date(date), "MMM dd, yyyy");
+  return displayDate(date);
 }
 
 export function formatMonth(month: number, year: number): string {

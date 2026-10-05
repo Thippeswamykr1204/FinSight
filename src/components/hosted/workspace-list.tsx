@@ -16,7 +16,10 @@ import { api } from "@/lib/hosted/client";
 export function WorkspaceList({
   memberships,
 }: {
-  memberships: Array<{ role: string; workspace: { id: string; name: string } }>;
+  memberships: Array<{
+    role: string;
+    workspace: { id: string; name: string; currency: string };
+  }>;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -68,7 +71,7 @@ export function WorkspaceList({
               </div>
               <h2 className="mt-7 text-xl font-semibold">{workspace.name}</h2>
               <p className="mt-3 text-xs capitalize text-[var(--ink-soft)]">
-                {role.toLowerCase()} · USD workspace
+                {role.toLowerCase()} · {workspace.currency} workspace
               </p>
             </Link>
           ))}

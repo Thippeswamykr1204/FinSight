@@ -1,4 +1,5 @@
 "use client";
+import { displayDate } from "@/lib/finance/region";
 
 import { useState } from "react";
 import { ArrowRight, Plus, Target } from "lucide-react";
@@ -15,7 +16,7 @@ import {
   goalSchema,
   localDate,
   money,
-  toCents,
+  toPaise,
   type Goal,
 } from "@/lib/finance/model";
 
@@ -35,7 +36,7 @@ export default function GoalsPage() {
       const goal = goalSchema.parse({
         id: crypto.randomUUID(),
         name: data.get("name"),
-        target: toCents(String(data.get("target"))),
+        target: toPaise(String(data.get("target"))),
         saved: 0,
         due: data.get("due"),
       });
@@ -51,7 +52,7 @@ export default function GoalsPage() {
     setError("");
     if (!funding) return;
     try {
-      const amount = toCents(
+      const amount = toPaise(
         String(new FormData(event.currentTarget).get("amount")),
       );
       if (amount > funding.target - funding.saved)
@@ -119,7 +120,7 @@ export default function GoalsPage() {
               </span>
               <h3 className="mt-6 text-lg font-semibold">{goal.name}</h3>
               <p className="mt-2 text-xs text-[var(--ink-soft)]">
-                Target date · {goal.due}
+                Target date · {displayDate(goal.due)}
               </p>
               <div className="mt-8 flex justify-between gap-3">
                 <p className="text-2xl font-semibold tracking-tight">
@@ -196,7 +197,7 @@ export default function GoalsPage() {
               className="control px-3"
             />
           </Field>
-          <Field label="Target amount (USD)">
+          <Field label="Target amount (INR)">
             <input
               required
               name="target"
@@ -224,7 +225,7 @@ export default function GoalsPage() {
         description="Record savings you have already set aside. No money is transferred."
       >
         <form onSubmit={fund} className="space-y-4">
-          <Field label="Contribution (USD)">
+          <Field label="Contribution (INR)">
             <input
               required
               name="amount"

@@ -31,6 +31,12 @@ export function GET(
         return {
           format: "finsight-workspace-v1",
           exportedAt: new Date().toISOString(),
+          money: {
+            encoding: "integer-minor-units",
+            scale: 100,
+            currency: workspace?.currency,
+            minorUnit: workspace?.currency === "INR" ? "paise" : "legacy cents",
+          },
           workspace,
         };
       },

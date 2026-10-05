@@ -5,6 +5,7 @@ import { authorize, type Permission } from "./authorization";
 import { HttpError, type Principal } from "./http";
 import type { FinanceCommand } from "./contracts";
 import { localDate } from "@/lib/finance/model";
+import { region, financialYear, periodTotals } from "@/lib/finance/region";
 import { fingerprint as importFingerprint } from "@/lib/finance/import-export";
 
 const digest = (value: string) =>
@@ -53,6 +54,7 @@ export async function createWorkspace(
     return db.workspace.create({
       data: {
         name,
+        currency: region.currency,
         members: { create: { userId: actor.userId, role: "OWNER" } },
         audit: {
           create: {
@@ -112,6 +114,15 @@ export async function executeCommand(
   requestId: string,
 ) {
   return workspaceWrite(actor, workspaceId, "write", async (db) => {
+    const workspace = await db.workspace.findUniqueOrThrow({
+      where: { id: workspaceId },
+    });
+    if (workspace.currency !== region.currency)
+      throw new HttpError(
+        409,
+        "LEGACY_CURRENCY_READ_ONLY",
+        "This legacy currency ledger is read-only. Export it and create an INR workspace; amounts have not been converted.",
+      );
     const fingerprint = digest(JSON.stringify(command));
     const previous = await db.idempotentWrite.findUnique({
       where: { workspaceId_key: { workspaceId, key } },
@@ -334,7 +345,7 @@ export async function executeCommand(
 export async function overview(actor: Principal, workspaceId: string) {
   const membership = await authorize(actor, workspaceId);
   const db = hostedDb();
-  const now = new Date();
+  const now = new Date(`${localDate()}T12:00:00Z`);
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const end = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
@@ -348,6 +359,7 @@ export async function overview(actor: Principal, workspaceId: string) {
     goals,
     members,
     history,
+    fyEntries,
   ] = await Promise.all([
     db.financialAccount.findMany({
       where: { workspaceId },
@@ -386,6 +398,16 @@ export async function overview(actor: Principal, workspaceId: string) {
       COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0)::bigint AS expenses
       FROM v2_ledger_entries WHERE "workspaceId" = ${workspaceId} AND date >= ${new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1))} AND date < ${end}
       GROUP BY TO_CHAR(date, 'YYYY-MM') ORDER BY month`,
+    db.ledgerEntry.findMany({
+      where: {
+        workspaceId,
+        date: {
+          gte: new Date(financialYear().start),
+          lte: new Date(financialYear().end),
+        },
+      },
+      select: { date: true, amount: true, type: true },
+    }),
   ]);
   const balances = accounts.map((account) => ({
     ...account,
@@ -420,6 +442,18 @@ export async function overview(actor: Principal, workspaceId: string) {
     goals,
     members,
     history,
+    financialYear: {
+      ...financialYear(),
+      ...periodTotals(
+        fyEntries.map((entry) => ({
+          ...entry,
+          date: entry.date.toISOString(),
+          amount: Number(entry.amount),
+        })),
+        financialYear().start,
+        financialYear().end,
+      ),
+    },
   };
 }
 

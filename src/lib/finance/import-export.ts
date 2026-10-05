@@ -1,4 +1,5 @@
-import { categories, isoDate, toCents, type Transaction } from "./model";
+import { categories, isoDate, toPaise, type Transaction } from "./model";
+import { region, displayDate } from "./region";
 
 function csvRows(input: string): string[][] {
   const rows: string[][] = [];
@@ -38,6 +39,11 @@ export function parseStatement(
     throw new Error("Choose a statement smaller than 2 MB.");
   let records: Record<string, string>[];
   if (/\.ofx$/i.test(filename)) {
+    const currency = input.match(/<CURDEF>([^<\r\n]+)/i)?.[1].trim();
+    if (currency && currency !== region.currency)
+      throw new Error(
+        "Only INR statements can be imported. Convert externally with a documented exchange rate first.",
+      );
     const blocks =
       input.match(
         /<STMTTRN>[\s\S]*?(?:<\/STMTTRN>|(?=<STMTTRN>|<\/BANKTRANLIST>))/gi,
@@ -80,9 +86,13 @@ export function parseStatement(
       record.type?.toLowerCase() ||
       (record.amount.startsWith("-") ? "expense" : "income");
     try {
+      if (record.currency && record.currency.toUpperCase() !== region.currency)
+        throw new Error(
+          "Statement currency must be INR; no automatic conversion is performed",
+        );
       if (type !== "income" && type !== "expense")
         throw new Error("Type must be income or expense");
-      const amount = toCents(record.amount.replace(/^[+-]/, ""));
+      const amount = toPaise(record.amount.replace(/^[+-]/, ""));
       const merchant = (record.merchant || record.description || "").trim();
       if (!merchant || merchant.length > 120)
         throw new Error("Merchant must contain 1–120 characters");
@@ -96,7 +106,9 @@ export function parseStatement(
       return {
         merchant,
         amount,
-        date: isoDate.parse(record.date),
+        date: isoDate.parse(
+          record.date.replace(/^(\d{2})\/(\d{2})\/(\d{4})$/, "$3-$2-$1"),
+        ),
         type,
         category,
         accountId,
@@ -131,19 +143,23 @@ export function uniqueImports(
     return true;
   });
 }
-export function exportCsv(transactions: Transaction[]) {
+export function exportCsv(
+  transactions: Transaction[],
+  currency: string = region.currency,
+) {
   const escape = (value: string) =>
     `"${(/^(?:\s*[=+@-]|[\t\r\n])/.test(value) ? `'${value}` : value).replace(/"/g, '""')}"`;
   return [
-    "date,merchant,amount,type,category,note",
+    "date,merchant,amount,type,category,note,currency",
     ...transactions.map((transaction) =>
       [
-        transaction.date,
+        displayDate(transaction.date),
         transaction.merchant,
         (transaction.amount / 100).toFixed(2),
         transaction.type,
         transaction.category,
         transaction.note,
+        currency,
       ]
         .map(escape)
         .join(","),

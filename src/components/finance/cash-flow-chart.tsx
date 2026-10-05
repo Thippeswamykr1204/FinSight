@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { cashFlow, type FinanceState } from "@/lib/finance/model";
+import { compactMoney, money } from "@/lib/finance/region";
 
 export default function CashFlowChart({
   state,
@@ -53,9 +54,9 @@ export default function CashFlowChart({
             stroke="rgba(255,255,255,.6)"
             tickLine={false}
             axisLine={false}
-            tickFormatter={(value) => `$${value / 1000}k`}
+            tickFormatter={(value) => compactMoney(value * 100)}
             tick={{ fontSize: 10 }}
-            width={46}
+            width={64}
           />
           <Tooltip
             contentStyle={{
@@ -66,10 +67,7 @@ export default function CashFlowChart({
               fontSize: 12,
             }}
             formatter={(value: number, name: string) => [
-              new Intl.NumberFormat(state.locale, {
-                style: "currency",
-                currency: "USD",
-              }).format(value),
+              money(value * 100, state.locale),
               name === "income" ? "Income" : "Expenses",
             ]}
           />

@@ -11,6 +11,7 @@ import {
 } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { download } from "@/lib/finance/import-export";
+import { legacyDemoStorageKey } from "@/lib/finance/storage";
 
 export default function SettingsPage() {
   const { state, update, notice, reset } = useFinance();
@@ -56,15 +57,14 @@ export default function SettingsPage() {
               defaultValue={state.locale}
               className="control px-3"
             >
-              <option value="en-US">English (United States)</option>
-              <option value="en-GB">English (United Kingdom)</option>
-              <option value="de-DE">Deutsch (Deutschland)</option>
+              <option value="en-IN">English (India)</option>
             </select>
           </Field>
         </div>
         <p className="text-xs leading-6 text-[var(--ink-soft)]">
-          This workspace uses USD. Formatting changes do not convert currency or
-          alter balances.
+          INR · Indian digit grouping · DD/MM/YYYY · Asia/Kolkata. The financial
+          year runs from April to March. No exchange-rate conversion is
+          performed.
         </p>
         <label className="flex items-center gap-3 text-sm">
           <input
@@ -89,6 +89,24 @@ export default function SettingsPage() {
           them. Use sample data when sharing the demo.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
+          <Button
+            variant="outline"
+            onClick={() => {
+              const legacy = localStorage.getItem(legacyDemoStorageKey);
+              if (legacy)
+                download(
+                  legacy,
+                  "finsight-legacy-currency-workspace.json",
+                  "application/json",
+                );
+              else
+                notice(
+                  "No earlier currency workspace is stored in this browser.",
+                );
+            }}
+          >
+            Export earlier currency data
+          </Button>
           <Button
             variant="outline"
             onClick={() =>

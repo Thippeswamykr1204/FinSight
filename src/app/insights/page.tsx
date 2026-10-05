@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ArrowUpRight, Lightbulb, ShieldCheck, TrendingUp } from "lucide-react";
 import { useFinance } from "@/components/finance/provider";
 import { PageHeading } from "@/components/finance/primitives";
+import { financialYear, periodTotals, displayDate } from "@/lib/finance/region";
 import {
   cashFlow,
   categoryColors,
@@ -16,6 +17,8 @@ export default function InsightsPage() {
   const { state } = useFinance();
   const [horizon, setHorizon] = useState(3);
   const summary = summarize(state);
+  const fy = financialYear();
+  const yearTotals = periodTotals(state.transactions, fy.start, fy.end);
   const previous = cashFlow(state, 4).slice(0, 3);
   const monthlyNet = Math.round(
     previous.reduce((sum, month) => sum + month.saved * 100, 0) / 3,
@@ -41,6 +44,32 @@ export default function InsightsPage() {
         title="The signal behind the numbers."
         description="Explainable observations, grounded in your recorded activity."
       />
+      <section className="surface p-7">
+        <p className="eyebrow">
+          {fy.label} · {displayDate(fy.start)} – {displayDate(fy.end)}
+        </p>
+        <h3 className="mt-3 text-xl font-semibold">
+          Your Indian financial year
+        </h3>
+        <dl className="mt-5 grid gap-5 sm:grid-cols-3">
+          {Object.entries({
+            Income: yearTotals.income,
+            Expenses: yearTotals.expenses,
+            "Net cash flow": yearTotals.saved,
+          }).map(([label, value]) => (
+            <div key={label}>
+              <dt className="text-sm text-[var(--ink-soft)]">{label}</dt>
+              <dd className="mt-2 text-xl font-semibold tabular-nums">
+                {money(value)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-4 text-xs text-[var(--ink-soft)]">
+          Recorded transactions only. This is a cash-flow summary, not taxable
+          income.
+        </p>
+      </section>
       <div className="grid gap-5 lg:grid-cols-[1.2fr,.8fr]">
         <section className="rounded-3xl bg-[#101b16] p-8 text-white">
           <p className="flex items-center gap-2 text-xs uppercase tracking-widest text-[#b8f2d0]">

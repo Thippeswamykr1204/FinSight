@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { test, expect } from "@playwright/test";
 import { PrismaClient } from "../../src/generated/hosted";
 import {
@@ -224,4 +225,110 @@ test("database composite foreign keys reject cross-workspace account references"
   ).rejects.toThrow();
   await db.$disconnect();
   await client.dispose();
+});
+
+test("INR migration preserves funded legacy amounts and only moves empty workspaces", async () => {
+  const db = new PrismaClient();
+  const sql = await readFile(
+    "prisma/hosted/migrations/20261005090000_india_currency/migration.sql",
+    "utf8",
+  );
+  const schema = `migration_${randomUUID().replaceAll("-", "")}`;
+  try {
+    await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
+      await tx.$executeRawUnsafe(`SET LOCAL search_path TO "${schema}"`);
+      await tx.$executeRawUnsafe(
+        `CREATE TABLE v2_workspaces (id text PRIMARY KEY, currency char(3) DEFAULT 'USD', CONSTRAINT workspace_currency CHECK (currency = 'USD'))`,
+      );
+      for (const table of [
+        "v2_financial_accounts",
+        "v2_ledger_entries",
+        "v2_budget_plans",
+        "v2_savings_goals",
+      ])
+        await tx.$executeRawUnsafe(
+          `CREATE TABLE ${table} ("workspaceId" text, amount bigint)`,
+        );
+      await tx.$executeRawUnsafe(
+        `INSERT INTO v2_workspaces (id) VALUES ('empty'), ('account'), ('entry'), ('budget'), ('goal')`,
+      );
+      for (const [table, id] of [
+        ["v2_financial_accounts", "account"],
+        ["v2_ledger_entries", "entry"],
+        ["v2_budget_plans", "budget"],
+        ["v2_savings_goals", "goal"],
+      ])
+        await tx.$executeRawUnsafe(
+          `INSERT INTO ${table} VALUES ('${id}', 123456)`,
+        );
+      await tx.$executeRawUnsafe(sql);
+      const rows = await tx.$queryRawUnsafe<
+        Array<{ id: string; currency: string }>
+      >(`SELECT * FROM v2_workspaces ORDER BY id`);
+      expect(rows.find((row) => row.id === "empty")?.currency).toBe("INR");
+      expect(
+        rows
+          .filter((row) => row.id !== "empty")
+          .every((row) => row.currency === "USD"),
+      ).toBe(true);
+      for (const table of [
+        "v2_financial_accounts",
+        "v2_ledger_entries",
+        "v2_budget_plans",
+        "v2_savings_goals",
+      ])
+        expect(await tx.$queryRawUnsafe(`SELECT amount FROM ${table}`)).toEqual(
+          [{ amount: 123456n }],
+        );
+      await tx.$executeRawUnsafe(
+        `INSERT INTO v2_workspaces (id) VALUES ('new')`,
+      );
+      expect(
+        await tx.$queryRawUnsafe(
+          `SELECT currency FROM v2_workspaces WHERE id = 'new'`,
+        ),
+      ).toEqual([{ currency: "INR" }]);
+      await tx.$executeRawUnsafe(`DROP SCHEMA "${schema}" CASCADE`);
+    });
+  } finally {
+    await db.$disconnect();
+  }
+});
+
+test("legacy currency is read-only at the server boundary and remains explicit on export", async ({
+  playwright,
+}) => {
+  const client = await playwright.request.newContext();
+  const db = new PrismaClient();
+  try {
+    await register(client);
+    const id = await workspace(client);
+    expect(
+      (await db.workspace.findUniqueOrThrow({ where: { id } })).currency,
+    ).toBe("INR");
+    await db.workspace.update({ where: { id }, data: { currency: "USD" } });
+    const response = await command(client, id, {
+      action: "account.create",
+      data: {
+        name: "Unsafe reinterpretation",
+        type: "Cash",
+        openingBalance: 12345,
+      },
+    });
+    expect(response.status()).toBe(409);
+    expect(
+      await db.financialAccount.count({ where: { workspaceId: id } }),
+    ).toBe(0);
+    const exported = (
+      await (
+        await client.get(`${origin}/api/v1/workspaces/${id}/export`)
+      ).json()
+    ).data;
+    expect(exported.workspace.currency).toBe("USD");
+    expect(exported.money.minorUnit).toBe("legacy cents");
+  } finally {
+    await db.$disconnect();
+    await client.dispose();
+  }
 });

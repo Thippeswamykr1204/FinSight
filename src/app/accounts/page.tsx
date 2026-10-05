@@ -17,7 +17,7 @@ import {
   accountSchema,
   money,
   summarize,
-  toCents,
+  toPaise,
 } from "@/lib/finance/model";
 
 export default function AccountsPage() {
@@ -34,7 +34,7 @@ export default function AccountsPage() {
       const balance =
         raw === "0" || raw === "0.00"
           ? 0
-          : toCents(raw.replace(/^-/, "")) * (raw.startsWith("-") ? -1 : 1);
+          : toPaise(raw.replace(/^-/, "")) * (raw.startsWith("-") ? -1 : 1);
       const account = accountSchema.parse({
         id: crypto.randomUUID(),
         name: data.get("name"),
@@ -93,7 +93,7 @@ export default function AccountsPage() {
             </div>
             <h3 className="mt-6 text-lg font-semibold">{account.name}</h3>
             <p className="mt-1 text-xs text-[var(--ink-soft)]">
-              Manual account · USD
+              Manual account · INR
             </p>
             <p className="mt-7 text-3xl font-semibold tracking-tight">
               {money(accountBalance(state, account.id), state.locale)}
@@ -181,7 +181,7 @@ export default function AccountsPage() {
               <option>Investments</option>
             </select>
           </Field>
-          <Field label="Opening balance (USD; use a negative amount for debt)">
+          <Field label="Opening balance (INR; use a negative amount for debt)">
             <input
               required
               name="balance"

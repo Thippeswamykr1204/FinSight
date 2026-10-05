@@ -18,6 +18,7 @@ import { useFinance } from "@/components/finance/provider";
 import { Empty, PageHeading } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
 import { AnimatedNumber } from "@/components/ui/animated-number";
+import { compactMoney, displayDate, region } from "@/lib/finance/region";
 import {
   cashFlow,
   categoryColors,
@@ -61,6 +62,7 @@ export default function DashboardPage() {
         eyebrow={new Intl.DateTimeFormat(state.locale, {
           month: "long",
           year: "numeric",
+          timeZone: region.timeZone,
         }).format(new Date())}
         title="Your money, at a glance."
         description="A clear read on what changed and what comes next."
@@ -108,7 +110,7 @@ export default function DashboardPage() {
                 <p className="mt-5 text-[clamp(2.5rem,5vw,4rem)] font-semibold leading-none tracking-[-.07em]">
                   <AnimatedNumber
                     value={summary.saved / 100}
-                    prefix="$"
+                    prefix="₹"
                     decimals={2}
                   />
                 </p>
@@ -130,7 +132,9 @@ export default function DashboardPage() {
                       {label}
                     </p>
                     <p className="mt-2 text-sm font-semibold">
-                      {money(Number(value), state.locale)}
+                      <span title={money(Number(value), state.locale)}>
+                        {compactMoney(Number(value))}
+                      </span>
                     </p>
                   </div>
                 ))}
@@ -401,8 +405,8 @@ export default function DashboardPage() {
         </Link>
       </div>
       <p className="text-xs text-[var(--ink-soft)]">
-        Demo workspace · USD · Report date {localDate()} · Figures reflect
-        browser-local records.
+        Demo workspace · INR · Report date {displayDate(localDate())} · Figures
+        reflect browser-local records.
       </p>
     </div>
   );

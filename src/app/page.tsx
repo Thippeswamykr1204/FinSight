@@ -79,7 +79,7 @@ export default function LandingPage() {
                   <TrendingUp size={18} className="text-[#b8f2d0]" />
                 </div>
                 <p className="mt-5 text-5xl font-semibold tracking-[-.065em]">
-                  $2,406<span className="text-3xl text-white/55">.84</span>
+                  ₹42,067<span className="text-3xl text-white/55">.50</span>
                 </p>
                 <p className="mt-3 text-xs text-white/65">
                   Room for today. Progress toward tomorrow.
@@ -116,7 +116,7 @@ export default function LandingPage() {
                     Emergency fund
                   </p>
                   <p className="mt-3 text-2xl font-semibold tracking-tight">
-                    $8,400
+                    ₹2,40,000
                   </p>
                   <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[#eef2f0]">
                     <div className="h-full w-[70%] rounded-full bg-[#178457]" />

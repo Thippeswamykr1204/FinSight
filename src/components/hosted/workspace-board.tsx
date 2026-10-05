@@ -37,10 +37,11 @@ import {
   categories,
   categoryColors,
   localDate,
-  money,
-  toCents,
+  money as formatMoney,
+  toPaise,
   type Transaction,
 } from "@/lib/finance/model";
+import { region, displayDate } from "@/lib/finance/region";
 import {
   download,
   exportCsv,
@@ -58,13 +59,15 @@ type Editor =
   | "import"
   | "invite"
   | null;
-const signedCents = (raw: string) =>
+const signedPaise = (raw: string) =>
   /^(0|0\.0{1,2})$/.test(raw)
     ? 0
-    : toCents(raw.replace(/^-/, "")) * (raw.startsWith("-") ? -1 : 1);
+    : toPaise(raw.replace(/^-/, "")) * (raw.startsWith("-") ? -1 : 1);
 
 export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
   const [data, setData] = useState<Overview | null>(null);
+  const money = (value: number) =>
+    formatMoney(value, region.locale, data?.workspace.currency);
   const [entries, setEntries] = useState<HostedEntry[]>([]);
   const [view, setView] = useState<View>("Overview");
   const [query, setQuery] = useState("");
@@ -123,7 +126,10 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
     const timer = setTimeout(() => setNotice(""), 6000);
     return () => clearTimeout(timer);
   }, [notice]);
-  const canWrite = data?.role !== "VIEWER";
+  const canWrite =
+    !!data &&
+    data.role !== "VIEWER" &&
+    data.workspace.currency === region.currency;
   const canManage = data && ["OWNER", "ADMIN"].includes(data.role);
   function open(kind: Editor) {
     setEditor(kind);
@@ -158,13 +164,13 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
           data: {
             name: field("name"),
             type: field("type") as "Cash" | "Credit" | "Investments",
-            openingBalance: signedCents(field("balance")),
+            openingBalance: signedPaise(field("balance")),
           },
         });
       if (editor === "transaction") {
         const entry = {
           merchant: field("merchant"),
-          amount: toCents(field("amount")),
+          amount: toPaise(field("amount")),
           date: field("date"),
           type: field("type") as "income" | "expense",
           category: field("category") as (typeof categories)[number],
@@ -191,7 +197,7 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
               "Income"
             >,
             month: localDate().slice(0, 7),
-            limit: toCents(field("amount")),
+            limit: toPaise(field("amount")),
           },
         });
       if (editor === "goal")
@@ -199,7 +205,7 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
           action: "goal.create",
           data: {
             name: field("name"),
-            target: toCents(field("amount")),
+            target: toPaise(field("amount")),
             due: field("due"),
           },
         });
@@ -207,7 +213,7 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
         await command({
           action: "goal.contribute",
           id: funding.id,
-          amount: toCents(field("amount")),
+          amount: toPaise(field("amount")),
         });
       if (editor === "invite") {
         await api(`${base}/members`, {
@@ -382,7 +388,7 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
               <td className="max-w-[230px] px-5 py-4">
                 <p className="truncate font-medium">{entry.merchant}</p>
                 <p className="mt-1 text-xs text-[var(--ink-soft)]">
-                  {entry.date} ·{" "}
+                  {displayDate(entry.date)} ·{" "}
                   {
                     data.accounts.find(
                       (account) => account.id === entry.accountId,
@@ -462,6 +468,23 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
         )}
       </PageHeading>
       <FormError error={loadError} />
+      {data.workspace.currency !== region.currency && (
+        <p role="status" className="surface p-5 text-sm">
+          Legacy {data.workspace.currency} ledger · read-only. Your original
+          amounts are preserved. Export this workspace and create an INR
+          workspace; no conversion has been applied.
+        </p>
+      )}
+      {view === "Overview" && (
+        <section className="surface p-5">
+          <p className="eyebrow">{data.financialYear.label} · April–March</p>
+          <p className="mt-3 text-sm">
+            Recorded income {money(data.financialYear.income)} · Expenses{" "}
+            {money(data.financialYear.expenses)} · Net{" "}
+            {money(data.financialYear.saved)}
+          </p>
+        </section>
+      )}
       {notice && (
         <div
           role="status"
@@ -638,6 +661,7 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
                       ...entry,
                       category: entry.category as (typeof categories)[number],
                     })),
+                    data.workspace.currency,
                   ),
                   "finsight-current-page.csv",
                   "text/csv",
@@ -690,7 +714,7 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
                 </span>
                 <h3 className="mt-6 text-lg font-semibold">{account.name}</h3>
                 <p className="mt-2 text-xs text-[var(--ink-soft)]">
-                  {account.type} · Manual · USD
+                  {account.type} · Manual · {data.workspace.currency}
                 </p>
                 <p className="mt-7 text-3xl font-semibold tracking-tight">
                   {money(account.balance)}
@@ -783,7 +807,7 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
                 <Target size={25} className="text-[var(--mint-deep)]" />
                 <h3 className="mt-6 text-lg font-semibold">{goal.name}</h3>
                 <p className="mt-2 text-xs text-[var(--ink-soft)]">
-                  Target date {goal.due.slice(0, 10)}
+                  Target date {displayDate(goal.due)}
                 </p>
                 <p className="mt-7 text-3xl font-semibold tracking-tight">
                   {money(goal.saved)}
@@ -906,7 +930,7 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
         description={
           editor === "invite"
             ? "Invitations are sent to the selected email address and expire after three days."
-            : "Changes are validated and saved to this hosted workspace. Amounts are in USD."
+            : "Changes are validated and saved to this hosted workspace. Amounts are in INR."
         }
       >
         {editor === "import" ? (
@@ -993,7 +1017,7 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
                     <option>Investments</option>
                   </select>
                 </Field>
-                <Field label="Opening balance (USD; negative for debt)">
+                <Field label="Opening balance (INR; negative for debt)">
                   <input
                     name="balance"
                     required
@@ -1063,10 +1087,10 @@ export function WorkspaceBoard({ workspaceId }: { workspaceId: string }) {
               <Field
                 label={
                   editor === "budget"
-                    ? "Monthly limit (USD)"
+                    ? "Monthly limit (INR)"
                     : editor === "goal"
-                      ? "Target amount (USD)"
-                      : "Amount (USD)"
+                      ? "Target amount (INR)"
+                      : "Amount (INR)"
                 }
               >
                 <input

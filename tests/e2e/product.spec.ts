@@ -12,12 +12,12 @@ test("transaction lifecycle persists across reloads and exports filtered data", 
     .click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Merchant or source").fill("Lifecycle Bakery");
-  await dialog.getByLabel("Amount (USD)", { exact: true }).fill("12.34");
+  await dialog.getByLabel("Amount (INR)", { exact: true }).fill("12.34");
   await dialog.getByRole("button", { name: "Save transaction" }).click();
   await page.getByPlaceholder("Search transactions").fill("Lifecycle Bakery");
   await expect(
     page.getByRole("row").filter({ hasText: "Lifecycle Bakery" }),
-  ).toContainText("$12.34");
+  ).toContainText("₹12.34");
   await page.reload();
   await page.getByPlaceholder("Search transactions").fill("Lifecycle Bakery");
   await page
@@ -25,12 +25,12 @@ test("transaction lifecycle persists across reloads and exports filtered data", 
     .click();
   await page
     .getByRole("dialog")
-    .getByLabel("Amount (USD)", { exact: true })
+    .getByLabel("Amount (INR)", { exact: true })
     .fill("20.50");
   await page.getByRole("button", { name: "Save transaction" }).click();
   await expect(
     page.getByRole("row").filter({ hasText: "Lifecycle Bakery" }),
-  ).toContainText("$20.50");
+  ).toContainText("₹20.50");
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export CSV" }).click();
   expect((await download).suggestedFilename()).toBe(
@@ -81,7 +81,7 @@ test("budget, goal, and account mutations survive reload", async ({ page }) => {
   await page.goto("/budgets");
   await page.getByRole("button", { name: "Add budget", exact: true }).click();
   await page.getByRole("dialog").getByLabel("Category").selectOption("Health");
-  await page.getByRole("dialog").getByLabel("Monthly limit (USD)").fill("250");
+  await page.getByRole("dialog").getByLabel("Monthly limit (INR)").fill("250");
   await page.getByRole("button", { name: "Save budget" }).click();
   await page.reload();
   await expect(
@@ -90,14 +90,14 @@ test("budget, goal, and account mutations survive reload", async ({ page }) => {
   await page.goto("/goals");
   await page.getByRole("button", { name: "New goal" }).click();
   await page.getByLabel("Goal name").fill("Weekend adventure");
-  await page.getByLabel("Target amount (USD)").fill("100");
+  await page.getByLabel("Target amount (INR)").fill("100");
   await page.getByLabel("Target date").fill("2028-12-01");
   await page.getByRole("button", { name: "Create goal", exact: true }).click();
   const goal = page
     .getByRole("article")
     .filter({ hasText: "Weekend adventure" });
   await goal.getByRole("button", { name: "Record contribution" }).click();
-  await page.getByLabel("Contribution (USD)").fill("100");
+  await page.getByLabel("Contribution (INR)").fill("100");
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Record contribution" })
@@ -120,7 +120,7 @@ test("budget, goal, and account mutations survive reload", async ({ page }) => {
   await page.reload();
   await expect(
     page.getByRole("article").filter({ hasText: "Travel savings" }),
-  ).toContainText("$1,500.25");
+  ).toContainText("₹1,500.25");
 });
 
 test("onboarding, keyboard palette, preferences and local deletion", async ({

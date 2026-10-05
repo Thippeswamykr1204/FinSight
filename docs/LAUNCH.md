@@ -22,7 +22,7 @@ The current branch contains a verified interactive demo and a verified hosted id
 - [x] Separate v2 workspace schema/migration, integer-money constraints, RBAC and tenant-isolation tests. Legacy conversion/backfill is a separate migration project.
 - [x] Verified email/password, magic links, TOTP/recovery, passkeys and session controls against isolated Postgres/SMTP dependencies.
 - [ ] Google/Apple live provider verification and production SMTP deliverability. Adapters/configuration gates are present.
-- [ ] Stripe sandbox and live verification; trials, invoices, plan gates, limits and replay-safe webhooks.
+- [ ] Razorpay test-mode and live verification; trials, GST invoices, plan gates, mandates and replay-safe webhooks.
 - [ ] Bank provider contracts, sandbox/live adapters, reconnect and consent revocation.
 - [ ] Transaction rules, recurring scheduling, subscription detection, anomaly model, receipt storage and investments.
 - [ ] Multi-currency ledger, dated exchange rates, split transactions and PDF reporting.
@@ -39,33 +39,33 @@ The current branch contains a verified interactive demo and a verified hosted id
 
 ## Pricing hypothesis
 
-Proposed monthly USD pricing: Free $0, Pro $9, Business $24 for five members. Test $79/year Pro and $219/year Business after measuring support and bank-data costs. Free should include manual/CSV usage; bank sync belongs in paid plans because aggregation is a direct recurring cost. Do not advertise unlimited live connections until provider economics are established.
+Proposed monthly INR pricing: Free ₹0, Pro ₹299 and Business ₹799 for five members, plus 18% GST where applicable (₹352.82 / ₹942.82 totals). Pricing is planned; no checkout or active paid entitlements exist. Obtain provider quotes and validate demand before fixing annual pricing. Manual/CSV usage remains the foundation; do not advertise live bank connections until contracts, consent and economics are established.
 
 Example Pro unit economics per paying workspace (planning assumptions, not provider quotes):
 
-| Item | Monthly USD |
+| Item | Monthly INR, excluding GST |
 |---|---:|
-| Revenue | 9.00 |
-| Payments, assumed 3% + $0.30 | 0.57 |
-| Bank data, assumed 2 connections × $0.50 | 1.00 |
-| Infrastructure allocation | 0.50 |
-| Email/notifications | 0.10 |
-| Support allocation | 0.60 |
-| Contribution | 6.23 (69%) |
+| Revenue | ₹299 |
+| Payments, illustrative 2% + GST on fee | ₹7.06 |
+| Bank data | Unquoted; not live |
+| Infrastructure allocation | ₹35 |
+| Email/notifications | ₹5 |
+| Support allocation | ₹50 |
+| Contribution before bank-data cost | ₹201.94 (68%) |
 
-At $1.50 per connection, contribution drops to $4.23 (47%). Obtain contracted pricing, meter active connections, and revisit included limits before launch. Annual billing reduces per-charge fixed fees but does not eliminate usage costs. All estimates exclude payroll, taxes, acquisition, legal, compliance and disputes.
+These are planning assumptions, not Razorpay quotes or an exchange-rate conversion of the earlier plan. Obtain contracted fees, meter usage and revisit included limits before launch. Estimates exclude payroll, acquisition, legal, compliance and disputes. Collected GST is not product revenue.
 
 ## Scale cost scenarios
 
-Assumptions: registered users, 30% monthly active, 40% of active users bank-connected, two connections each, and a hypothetical $0.25–$1.50 monthly cost per connection. These are workload scenarios; no benchmark or vendor commitment proves these capacities.
+Assumptions: 30% monthly active users, manual/CSV ledger use, no live bank aggregation. No benchmark or vendor commitment proves these capacities. Budget separately for regulated aggregation after provider discovery.
 
-| Registered users | MAU | Active bank connections | Compute/CDN | Postgres/backups | Redis/jobs | Storage/email/telemetry | Bank data | Estimated monthly total |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 10,000 | 3,000 | 2,400 | $100–300 | $100–250 | $30–100 | $50–200 | $600–3,600 | **$880–4,450** |
-| 100,000 | 30,000 | 24,000 | $500–1,500 | $500–1,500 | $150–500 | $300–1,000 | $6,000–36,000 | **$7,450–40,500** |
-| 1,000,000 | 300,000 | 240,000 | $3,000–10,000 | $3,000–12,000 | $1,000–4,000 | $2,000–8,000 | $60,000–360,000 | **$69,000–394,000** |
+| Registered users | MAU | Illustrative monthly infrastructure budget (INR) |
+|---:|---:|---:|
+| 10,000 | 3,000 | ₹25,000–75,000 |
+| 100,000 | 30,000 | ₹1,50,000–4,00,000 |
+| 1,000,000 | 300,000 | ₹8,00,000–25,00,000 |
 
-Bank aggregation dominates these scenarios. Re-estimate with actual active connections, refresh frequency, retention, telemetry sampling, imports per user, support load and paid conversion. A million-user product requires measured capacity planning; the local demo is not evidence of that scale.
+Re-estimate with measured retention, queries per active user, telemetry sampling, imports, support load and paid conversion. A million-user product requires measured capacity planning; local verification is not evidence of that scale.
 
 ## 90-day roadmap
 
@@ -73,7 +73,7 @@ Bank aggregation dominates these scenarios. Re-estimate with actual active conne
 Deliver workspace/user/membership/account models; integer-money migration strategy; repository boundaries; hosted identity with session controls; cross-tenant tests; idempotent transaction APIs and cursor pagination. Keep sample demo data isolated. Establish a threat model, CI, staging and backups before real customer records.
 
 ### Days 31–60: paid pilot
-Deliver Stripe Checkout/Portal and replay-safe webhooks, entitlements, a bank sandbox adapter, encrypted provider tokens, durable outbox/queue, imported-source deduplication, household roles, notification preferences and transactional email. Instrument activation and reliability. Run a small invited pilot with manual support and audited admin access.
+Deliver verified Razorpay checkout and replay-safe webhooks, GST invoicing and entitlements after credentials and merchant approval. Account Aggregator readiness does not imply licensed operation. Instrument activation and reliability. Run a small invited pilot with manual support and audited admin access.
 
 ### Days 61–90: controlled launch
 Deliver reconnection and reconciliation flows, export/deletion jobs, recurring/subscription detection, category rules, API keys and webhooks, receipt handling and currency support. Run performance, load, accessibility and independent security reviews. Exercise deployment rollback and disaster recovery. Publish reviewed legal pages and launch only after billing and provider operations are proven.

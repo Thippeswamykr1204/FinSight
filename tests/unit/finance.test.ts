@@ -8,7 +8,7 @@ import {
   seedState,
   stateSchema,
   summarize,
-  toCents,
+  toPaise,
   transactionSchema,
 } from "../../src/lib/finance/model";
 import {
@@ -19,8 +19,8 @@ import {
 
 describe("financial domain", () => {
   it("represents money as integer minor units without floating point accumulation", () => {
-    expect(toCents("0.10") + toCents("0.20")).toBe(30);
-    expect(toCents("1234.5")).toBe(123450);
+    expect(toPaise("0.10") + toPaise("0.20")).toBe(30);
+    expect(toPaise("1234.5")).toBe(123450);
     for (const value of [
       "1.001",
       "-1",
@@ -28,10 +28,10 @@ describe("financial domain", () => {
       "Infinity",
       "1e3",
       "0",
-      "1,234",
+      "1,23,4",
       "999999999999999",
     ])
-      expect(() => toCents(value)).toThrow();
+      expect(() => toPaise(value)).toThrow();
   });
   it("validates actual calendar dates and positive transaction values", () => {
     const transaction = seedState(new Date(2026, 9, 4)).transactions[0];
@@ -87,7 +87,7 @@ describe("financial domain", () => {
     expect(
       summary.budgets.find((budget) => budget.category === "Home")?.spent,
     ).toBe(25000);
-    expect(accountBalance(state, "checking")).toBe(685000);
+    expect(accountBalance(state, "checking")).toBe(6175000);
     expect(accountBalance(state, "missing")).toBe(0);
     expect(summary.balance).toBe(
       state.accounts.reduce(
@@ -138,8 +138,7 @@ describe("financial domain", () => {
         (transaction) => transaction.date <= "2026-01-01",
       ),
     ).toBe(true);
-    expect(money(123456, "en-US")).toBe("$1,234.56");
-    expect(money(123456, "de-DE", "EUR")).toContain("1.234,56");
+    expect(money(123456)).toBe("₹1,234.56");
   });
 });
 

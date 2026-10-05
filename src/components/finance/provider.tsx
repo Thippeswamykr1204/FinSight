@@ -8,8 +8,12 @@ import {
   type ReactNode,
 } from "react";
 import { stateSchema, seedState, type FinanceState } from "@/lib/finance/model";
+import {
+  demoStorageKey as key,
+  legacyDemoStorageKey,
+  restoreDemo,
+} from "@/lib/finance/storage";
 
-const key = "finsight-demo-v2";
 type Context = {
   state: FinanceState;
   update: (updater: (state: FinanceState) => FinanceState) => void;
@@ -25,8 +29,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState("");
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(key);
-      if (saved) setState(stateSchema.parse(JSON.parse(saved)));
+      const restored = restoreDemo(
+        localStorage.getItem(key),
+        localStorage.getItem(legacyDemoStorageKey),
+      );
+      setState(restored.state);
+      if (restored.reseeded)
+        setMessage(
+          "A fresh INR demo is ready. Your earlier currency workspace is preserved for export in Settings.",
+        );
     } catch {
       setMessage(
         "Saved demo data could not be read. A fresh sample workspace is ready.",
@@ -63,6 +74,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     setState(next);
   }
   function reset(empty = false) {
+    if (empty) localStorage.removeItem(legacyDemoStorageKey);
     const next = seedState();
     update(() =>
       empty

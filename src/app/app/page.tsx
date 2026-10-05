@@ -6,7 +6,10 @@ export default async function WorkspacesPage() {
   const actor = await principal(await headers());
   const memberships = await hostedDb().workspaceMember.findMany({
     where: { userId: actor.userId },
-    select: { role: true, workspace: { select: { id: true, name: true } } },
+    select: {
+      role: true,
+      workspace: { select: { id: true, name: true, currency: true } },
+    },
     orderBy: { createdAt: "asc" },
   });
   return <WorkspaceList memberships={memberships} />;

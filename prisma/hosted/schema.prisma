@@ -117,7 +117,7 @@ enum WorkspaceRole {
 model Workspace {
   id          String                @id @default(cuid())
   name        String
-  currency    String                @default("USD") @db.Char(3)
+  currency    String                @default("INR") @db.Char(3)
   revision    Int                   @default(0)
   createdAt   DateTime              @default(now())
   members     WorkspaceMember[]

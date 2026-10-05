@@ -1,4 +1,5 @@
 "use client";
+import { displayDate } from "@/lib/finance/region";
 
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "react-qr-code";
@@ -310,7 +311,7 @@ export function SecuritySettings() {
                 <p className="text-sm font-semibold">{key.name || "Passkey"}</p>
                 <p className="mt-1 text-xs text-[var(--ink-soft)]">
                   {key.createdAt
-                    ? `Registered ${new Date(key.createdAt).toLocaleDateString()}`
+                    ? `Registered ${displayDate(key.createdAt)}`
                     : "Registered authenticator"}
                 </p>
               </div>
@@ -363,8 +364,8 @@ export function SecuritySettings() {
                   {session.userAgent || "Unknown browser"}
                 </p>
                 <p className="mt-2 text-xs text-[var(--ink-soft)]">
-                  Started {new Date(session.createdAt).toLocaleString()} ·
-                  Expires {new Date(session.expiresAt).toLocaleDateString()}
+                  Started {displayDate(session.createdAt)} · Expires{" "}
+                  {displayDate(session.expiresAt)}
                 </p>
               </div>
               {session.token === current ? (

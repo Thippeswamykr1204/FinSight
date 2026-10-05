@@ -34,7 +34,7 @@ For a production-mode local preview, run `npm run build` then `npm run start`. W
 - Hosted identity: email/password, verification, reset, magic links, TOTP/recovery codes, passkeys and session/device revocation. Google/Apple buttons require configured provider credentials.
 - Real Postgres workspaces with owner/admin/editor/viewer roles, email invitations, tenant-scoped account/transaction/budget/goal mutations, optimistic concurrency, idempotency and audit records.
 
-All ledger amounts use integer minor units. The demo uses USD; selecting a locale changes formatting, not exchange rates. Goal contributions earmark existing savings and do not transfer money or inflate net worth. No payment, bank connection, email or AI request is simulated as a successful live operation.
+All new ledger amounts use integer INR paise with en-IN grouping, DD/MM/YYYY dates and Asia/Kolkata time. Financial years run April–March. Funded legacy USD workspaces retain their currency and amounts and are read-only; export them before starting a new INR workspace. Goal contributions earmark existing savings and do not transfer money or inflate net worth. No payment, bank connection, email or AI request is simulated as a successful live operation.
 
 ## Architecture
 

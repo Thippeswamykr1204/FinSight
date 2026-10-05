@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { region } from "@/lib/finance/region";
 
 export function AnimatedNumber({
   value,
@@ -39,7 +40,7 @@ export function AnimatedNumber({
   return (
     <span className="tabular-nums">
       {prefix}
-      {display.toLocaleString("en-US", {
+      {display.toLocaleString(region.locale, {
         minimumFractionDigits: decimals,
         maximumFractionDigits: decimals,
       })}
