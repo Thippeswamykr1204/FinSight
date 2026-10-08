@@ -14,6 +14,7 @@ import { authClient } from "@/lib/hosted/auth-client";
 import { BrandMark } from "@/components/layout/app-shell";
 import { Field, FormError } from "@/components/finance/primitives";
 import { Button } from "@/components/ui/button";
+import { PasswordInput } from "./password-input";
 
 type Mode = "sign-in" | "sign-up" | "reset" | "new-password" | "mfa";
 type Capabilities = {
@@ -269,9 +270,8 @@ export function AuthForm({
                       mode === "new-password" ? "New password" : "Password"
                     }
                   >
-                    <input
+                    <PasswordInput
                       required
-                      type="password"
                       autoComplete={
                         mode === "sign-in" ? "current-password" : "new-password"
                       }

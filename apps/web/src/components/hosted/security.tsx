@@ -22,6 +22,7 @@ import {
 } from "@/components/finance/primitives";
 import { download } from "@finsight/shared";
 import { DataRights } from "./data-rights";
+import { PasswordInput } from "./password-input";
 
 type Device = {
   token: string;
@@ -175,8 +176,7 @@ export function SecuritySettings() {
         {(enroll || enabled) && !uri && !codes.length && (
           <form onSubmit={startTotp} className="mt-6 max-w-sm space-y-4">
             <Field label="Current password">
-              <input
-                type="password"
+              <PasswordInput
                 required
                 autoComplete="current-password"
                 value={password}
