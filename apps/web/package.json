@@ -2,11 +2,14 @@
   "name": "@finsight/web",
   "private": true,
   "version": "3.0.0",
-  "description": "FinSight Next.js React layer. The approved UI remains in the existing App Router source tree during the mechanical workspace cutover.",
+  "description": "FinSight Next.js application.",
   "scripts": {
-    "dev": "next dev ../../ --turbopack",
-    "build": "next build ../../",
-    "start": "next start ../../",
-    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+    "dev": "node --env-file-if-exists=../../.env ../../node_modules/next/dist/bin/next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json"
+  },
+  "dependencies": {
+    "@finsight/shared": "3.0.0"
   }
 }

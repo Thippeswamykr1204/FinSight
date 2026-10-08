@@ -14,7 +14,6 @@ jobs:
     timeout-minutes: 20
     env:
       NEXT_TELEMETRY_DISABLED: "1"
-      ENABLE_LEGACY_API: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,9 +28,7 @@ jobs:
       - run: npm run test:api
       - run: npm run test:integration
       - run: npm audit --omit=dev --audit-level=high
-      - name: Full dependency advisory report (build-tool exception documented in SECURITY)
-        run: npm audit --audit-level=high
-        continue-on-error: true
+      - run: npm audit --audit-level=low
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
@@ -56,9 +53,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: docker compose config
+      - run: npm run env:init
+      - run: docker compose config --quiet
       - run: docker compose up --build -d --wait
-      - run: curl --fail --retry 10 --retry-delay 2 http://127.0.0.1:4000/health
-      - run: curl --fail --retry 10 --retry-delay 2 http://127.0.0.1:3000/api/health
+      - run: curl --fail --retry 10 --retry-delay 2 http://127.0.0.1:4000/ready
+      - run: curl --fail --retry 10 --retry-delay 2 http://127.0.0.1:3000/api/ready
       - if: always()
         run: docker compose down -v

@@ -1,5 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["bom1"],
-  "buildCommand": "npm run build"
+  "buildCommand": "npm run shared:build && npm run build --workspace @finsight/web",
+  "outputDirectory": "apps/web/.next",
+  "installCommand": "npm ci",
+  "framework": "nextjs"
 }

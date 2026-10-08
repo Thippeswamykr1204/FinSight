@@ -20,7 +20,8 @@ next-env.d.ts
 
 # Local secrets and generated clients
 .local/
-src/generated/
+**/src/generated/
+docs/parity-baseline/
 
 # Test and quality reports
 coverage/

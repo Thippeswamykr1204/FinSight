@@ -1,15 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
-
-export type ApiErrorCode =
-  | "VALIDATION"
-  | "UNAUTHENTICATED"
-  | "FORBIDDEN"
-  | "NOT_FOUND"
-  | "CONFLICT"
-  | "RATE_LIMIT"
-  | "SERVICE_UNAVAILABLE";
+import { captureFailure } from "./monitoring";
 
 export class HttpError extends Error {
   constructor(
@@ -78,6 +70,7 @@ export function errorHandler(
                 );
   if (failure.status >= 500)
     request.log?.error({ err: error, requestId }, "request_failed");
+  if (failure.status >= 500) captureFailure(error);
   response.setHeader("Cache-Control", "no-store");
   response.status(failure.status).json({
     error: {

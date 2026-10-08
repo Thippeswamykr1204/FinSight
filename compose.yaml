@@ -10,14 +10,20 @@ services:
       NODE_ENV: production
       API_URL: http://api:4000
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-      HOSTED_ENABLED: ${HOSTED_ENABLED:-true}
       NEXT_TELEMETRY_DISABLED: "1"
+      PRIVACY_CONTACT_EMAIL: ${PRIVACY_CONTACT_EMAIL:-}
+      GRIEVANCE_OFFICER_NAME: ${GRIEVANCE_OFFICER_NAME:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     ports: ["127.0.0.1:${FINSIGHT_WEB_PORT:-3000}:3000"]
     depends_on:
       api:
         condition: service_healthy
     restart: unless-stopped
+    init: true
+    stop_grace_period: 35s
   api:
+    env_file: .env
     build:
       context: .
       dockerfile: Dockerfile.api
@@ -29,8 +35,9 @@ services:
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       MONGODB_URI: mongodb://mongo:27017/finsight?replicaSet=rs0
       REDIS_URL: redis://redis:6379
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-local-development-secret-change-me-please}
-      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Run npm run env:init to create .env}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?Run npm run env:init to create .env}
+      FIELD_ENCRYPTION_PREVIOUS_KEYS: ${FIELD_ENCRYPTION_PREVIOUS_KEYS:-[]}
       HOSTED_LOCAL: ${HOSTED_LOCAL:-true}
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
@@ -44,13 +51,16 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    init: true
+    stop_grace_period: 35s
   worker:
+    env_file: .env
     build:
       context: .
       dockerfile: Dockerfile.api
     command: ["node", "apps/api/dist/worker.js"]
     healthcheck:
-      test: ["CMD", "node", "-e", "process.exit(0)"]
+      test: ["CMD", "node", "apps/api/dist/worker-health.js"]
       interval: 10s
       timeout: 5s
       start_period: 10s
@@ -62,8 +72,9 @@ services:
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       MONGODB_URI: mongodb://mongo:27017/finsight?replicaSet=rs0
       REDIS_URL: redis://redis:6379
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-local-development-secret-change-me-please}
-      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Run npm run env:init to create .env}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?Run npm run env:init to create .env}
+      FIELD_ENCRYPTION_PREVIOUS_KEYS: ${FIELD_ENCRYPTION_PREVIOUS_KEYS:-[]}
       HOSTED_LOCAL: ${HOSTED_LOCAL:-true}
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
@@ -74,13 +85,16 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    init: true
+    stop_grace_period: 35s
   mongo:
     image: mongo:8
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     ports: ["127.0.0.1:${FINSIGHT_MONGO_PORT:-27017}:27017"]
     volumes: [mongo-data:/data/db]
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test:
+        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -90,7 +104,10 @@ services:
       mongo:
         condition: service_healthy
     entrypoint: ["mongosh", "--host", "mongo:27017", "--eval"]
-    command: ["try { rs.status() } catch (e) { rs.initiate({_id:'rs0', members:[{_id:0, host:'mongo:27017'}]}) }"]
+    command:
+      [
+        "try { rs.status() } catch (e) { rs.initiate({_id:'rs0', members:[{_id:0, host:'mongo:27017'}]}) }",
+      ]
     restart: "no"
   redis:
     image: redis:7-alpine

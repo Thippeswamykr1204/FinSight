@@ -1,0 +1,72 @@
+name: finsight-production
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set the HTTPS web origin}
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set the HTTPS web origin}
+      API_URL: http://api:4000
+      PRIVACY_CONTACT_EMAIL: ${PRIVACY_CONTACT_EMAIL:?Set the operator contact}
+      GRIEVANCE_OFFICER_NAME: ${GRIEVANCE_OFFICER_NAME:?Set the grievance officer}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    ports: ["127.0.0.1:${FINSIGHT_WEB_PORT:-3000}:3000"]
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 35s
+  api:
+    build: { context: ., dockerfile: Dockerfile.api }
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      HOSTED_LOCAL: "false"
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set the HTTPS web origin}
+      API_ORIGIN: ${API_ORIGIN:?Set the HTTPS API origin}
+      MONGODB_URI: ${MONGODB_URI:?Set an authenticated managed replica-set URI}
+      REDIS_URL: ${REDIS_URL:?Set an authenticated managed Redis URI}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Generate an authentication secret}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?Generate a field encryption key}
+      SMTP_HOST: ${SMTP_HOST:?Set the transactional SMTP host}
+      SMTP_PORT: ${SMTP_PORT:?Set the transactional SMTP port}
+      EMAIL_FROM: ${EMAIL_FROM:?Set the verified sender}
+      PRIVACY_CONTACT_EMAIL: ${PRIVACY_CONTACT_EMAIL:?Set the operator contact}
+      GRIEVANCE_OFFICER_NAME: ${GRIEVANCE_OFFICER_NAME:?Set the grievance officer}
+    expose: ["4000"]
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 35s
+  worker:
+    build: { context: ., dockerfile: Dockerfile.api }
+    env_file: .env
+    command: ["node", "apps/api/dist/worker.js"]
+    environment:
+      NODE_ENV: production
+      HOSTED_LOCAL: "false"
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set the HTTPS web origin}
+      API_ORIGIN: ${API_ORIGIN:?Set the HTTPS API origin}
+      MONGODB_URI: ${MONGODB_URI:?Set an authenticated managed replica-set URI}
+      REDIS_URL: ${REDIS_URL:?Set an authenticated managed Redis URI}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Generate an authentication secret}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?Generate a field encryption key}
+      SMTP_HOST: ${SMTP_HOST:?Set the transactional SMTP host}
+      SMTP_PORT: ${SMTP_PORT:?Set the transactional SMTP port}
+      EMAIL_FROM: ${EMAIL_FROM:?Set the verified sender}
+    healthcheck:
+      test: ["CMD", "node", "apps/api/dist/worker-health.js"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 35s

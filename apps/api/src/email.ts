@@ -8,11 +8,13 @@ import { decryptSecret, encryptSecret } from "./encryption";
 import { nativeOptions } from "./repositories/unit-of-work";
 
 let queue: Queue | undefined;
+let queueConnection: Redis | undefined;
 export function emailQueue() {
+  queueConnection ??= new Redis(loadConfig().REDIS_URL, {
+    maxRetriesPerRequest: null,
+  });
   return (queue ??= new Queue("finsight-email", {
-    connection: new Redis(loadConfig().REDIS_URL, {
-      maxRetriesPerRequest: null,
-    }) as never,
+    connection: queueConnection as never,
     defaultJobOptions: {
       attempts: 6,
       backoff: { type: "exponential", delay: 15_000 },
@@ -73,6 +75,9 @@ export function startEmailWorker() {
     connectionTimeout: 10_000,
     socketTimeout: 15_000,
   });
+  const workerConnection = new Redis(config.REDIS_URL, {
+    maxRetriesPerRequest: null,
+  });
   const worker = new Worker(
     "finsight-email",
     async (job) => {
@@ -98,29 +103,41 @@ export function startEmailWorker() {
       );
     },
     {
-      connection: new Redis(config.REDIS_URL, {
-        maxRetriesPerRequest: null,
-      }) as never,
+      connection: workerConnection as never,
       concurrency: 5,
     },
   );
+  let dispatching: Promise<void> | undefined;
   const dispatch = () => {
-    void dispatchEmails().catch((error: unknown) =>
-      console.error(
-        JSON.stringify({
-          event: "email_dispatch_failed",
-          message: error instanceof Error ? error.message : "Unknown error",
-        }),
-      ),
-    );
+    if (dispatching) return;
+    dispatching = dispatchEmails()
+      .catch((error: unknown) =>
+        console.error(
+          JSON.stringify({
+            event: "email_dispatch_failed",
+            message: error instanceof Error ? error.message : "Unknown error",
+          }),
+        ),
+      )
+      .finally(() => {
+        dispatching = undefined;
+      });
   };
   dispatch();
   const poller = setInterval(dispatch, 15_000);
   return {
+    running: () => worker.isRunning(),
     close: async () => {
       clearInterval(poller);
+      await dispatching;
       await worker.close();
       if (queue) await queue.close();
+      transport.close();
+      await workerConnection.quit().catch(() => workerConnection.disconnect());
+      if (queueConnection)
+        await queueConnection.quit().catch(() => queueConnection?.disconnect());
+      queue = undefined;
+      queueConnection = undefined;
     },
   };
 }

@@ -3,14 +3,14 @@ import {
   amortize,
   goalMonthly,
   sipProjection,
-} from "../../src/lib/finance/calculators";
+} from "@finsight/shared/finance/calculators";
 import {
   cardReminders,
   suggestCategory,
   upiReference,
-} from "../../src/lib/finance/india-rules";
-import { reportShareText } from "../../src/lib/finance/report-share";
-import { parseStatement } from "../../src/lib/finance/import-export";
+} from "@finsight/shared/finance/india-rules";
+import { reportShareText } from "@finsight/shared/finance/report-share";
+import { parseStatement } from "@finsight/shared/finance/import-export";
 
 describe("Indian planning", () => {
   it("reconciles every paise of loan principal and adjusts the final installment", () => {
@@ -118,7 +118,7 @@ describe("Indian planning", () => {
       reportShareText(
         "FY 2026–27",
         { income: 123456700, expenses: 100, saved: 123456600 },
-        "Demo report",
+        "Financial-year report",
       ),
     ).toContain("Income: ₹12,34,567.00");
   });

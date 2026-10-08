@@ -5,17 +5,51 @@ import {
   cashFlow,
   localDate,
   money,
-  seedState,
+  emptyState,
   stateSchema,
   summarize,
   toPaise,
   transactionSchema,
-} from "../../src/lib/finance/model";
+} from "@finsight/shared/finance/model";
 import {
   exportCsv,
   parseStatement,
   uniqueImports,
-} from "../../src/lib/finance/import-export";
+} from "@finsight/shared/finance/import-export";
+
+function ledger(now = new Date()) {
+  const state = emptyState("Test account");
+  state.accounts = [
+    {
+      id: "checking",
+      name: "Bank account",
+      type: "Savings",
+      openingBalance: 6100000,
+      dueDate: null,
+    },
+  ];
+  state.transactions = [
+    {
+      id: "payment",
+      merchant: "Contract payment",
+      amount: 100000,
+      date: localDate(now),
+      type: "income",
+      category: "Income",
+      accountId: "checking",
+      note: "",
+    },
+  ];
+  state.budgets = [
+    {
+      id: "rent-budget",
+      category: "Rent",
+      limit: 3000000,
+      month: localDate(now).slice(0, 7),
+    },
+  ];
+  return state;
+}
 
 describe("financial domain", () => {
   it("represents money as integer minor units without floating point accumulation", () => {
@@ -34,7 +68,7 @@ describe("financial domain", () => {
       expect(() => toPaise(value)).toThrow();
   });
   it("validates actual calendar dates and positive transaction values", () => {
-    const transaction = seedState(new Date(2026, 9, 4)).transactions[0];
+    const transaction = ledger(new Date(2026, 9, 4)).transactions[0];
     expect(
       transactionSchema.safeParse({ ...transaction, date: "2026-02-30" })
         .success,
@@ -64,7 +98,7 @@ describe("financial domain", () => {
     ).toBe(false);
   });
   it("derives totals and account balances from the same ledger", () => {
-    const state = seedState(new Date(2026, 9, 4));
+    const state = ledger(new Date(2026, 9, 4));
     state.transactions = [
       {
         ...state.transactions[0],
@@ -97,7 +131,7 @@ describe("financial domain", () => {
     );
   });
   it("handles empty periods, overspending and income-free months without invalid scores", () => {
-    const state = seedState();
+    const state = ledger();
     state.transactions = [];
     state.budgets = [];
     const empty = summarize(state);
@@ -130,14 +164,15 @@ describe("financial domain", () => {
     expect(cashFlow(state, 12)).toHaveLength(12);
     expect(cashFlow(state, 3).at(-1)?.expenses).toBe(50);
   });
-  it("creates a valid seed with no future-dated current month entries", () => {
-    const state = seedState(new Date(2026, 0, 1));
+  it("starts with no financial records", () => {
+    const state = emptyState();
     expect(stateSchema.safeParse(state).success).toBe(true);
-    expect(
-      state.transactions.every(
-        (transaction) => transaction.date <= "2026-01-01",
-      ),
-    ).toBe(true);
+    expect([
+      state.accounts,
+      state.transactions,
+      state.budgets,
+      state.goals,
+    ]).toEqual([[], [], [], []]);
     expect(money(123456)).toBe("₹1,234.56");
   });
 });
@@ -206,7 +241,7 @@ describe("statement import and export", () => {
     expect(() => parseStatement("<OFX></OFX>", "empty.ofx", "a")).toThrow();
   });
   it("deduplicates existing and same-file transactions but preserves separate accounts", () => {
-    const row = seedState().transactions[0];
+    const row = ledger().transactions[0];
     expect(
       uniqueImports(
         [row],
@@ -225,7 +260,7 @@ describe("statement import and export", () => {
     ).toHaveLength(1);
   });
   it("exports round-trippable CSV and prevents spreadsheet formula execution", () => {
-    const transaction = { ...seedState().transactions[0], merchant: 'A, "B"' };
+    const transaction = { ...ledger().transactions[0], merchant: 'A, "B"' };
     expect(
       parseStatement(
         exportCsv([transaction]),

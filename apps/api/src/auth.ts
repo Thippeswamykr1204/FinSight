@@ -11,8 +11,9 @@ import { getDb } from "./mongo";
 import { loadConfig } from "./config";
 import { queueEmail } from "./email";
 import { consumeLimit } from "./redis";
+import { getOAuthState } from "better-auth/api";
 
-const privacyNoticeVersion = "2026-10-05";
+const privacyNoticeVersion = "2026-10-07";
 let instance: ReturnType<typeof createAuth> | undefined;
 
 function createAuth() {
@@ -90,21 +91,13 @@ function createAuth() {
     },
     account: { encryptOAuthTokens: true, accountLinking: { enabled: false } },
     socialProviders: {
-      ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+      ...(config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET
         ? {
             google: {
-              clientId: process.env.GOOGLE_CLIENT_ID,
-              clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+              clientId: config.GOOGLE_CLIENT_ID,
+              clientSecret: config.GOOGLE_CLIENT_SECRET,
               requireEmailVerification: true,
-            },
-          }
-        : {}),
-      ...(process.env.APPLE_CLIENT_ID && process.env.APPLE_CLIENT_SECRET
-        ? {
-            apple: {
-              clientId: process.env.APPLE_CLIENT_ID,
-              clientSecret: process.env.APPLE_CLIENT_SECRET,
-              requireEmailVerification: true,
+              disableImplicitSignUp: true,
             },
           }
         : {}),
@@ -161,7 +154,11 @@ function createAuth() {
       user: {
         create: {
           before: async (user) => {
-            if (!("noticeAccepted" in user) || user.noticeAccepted !== true) {
+            const oauthState = await getOAuthState();
+            const accepted =
+              ("noticeAccepted" in user && user.noticeAccepted === true) ||
+              oauthState?.noticeAccepted === true;
+            if (!accepted) {
               throw new APIError("BAD_REQUEST", {
                 message:
                   "Read and accept the privacy notice and terms before creating an account.",
@@ -170,6 +167,7 @@ function createAuth() {
             return {
               data: {
                 ...user,
+                noticeAccepted: true,
                 noticeVersion: privacyNoticeVersion,
                 noticeAcceptedAt: new Date(),
               },

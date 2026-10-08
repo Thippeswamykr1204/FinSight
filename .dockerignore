@@ -1,10 +1,10 @@
-node_modules
+**/node_modules
 .pnp
 .pnp.js
-.next
+**/.next
 out
 build
-dist
+**/dist
 .vercel
 *.tsbuildinfo
 next-env.d.ts
@@ -12,7 +12,7 @@ next-env.d.ts
 .env
 .env.*
 .local
-src/generated
+**/src/generated
 coverage
 test-results
 playwright-report
@@ -32,4 +32,3 @@ Thumbs.db
 docs
 tests
 prisma
-src/generated

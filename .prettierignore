@@ -1,4 +1,6 @@
-src/generated/
+**/src/generated/
+**/dist/
+**/node_modules/
 .next/
 coverage/
 test-results/

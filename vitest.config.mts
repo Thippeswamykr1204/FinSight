@@ -18,7 +18,7 @@ export default defineConfig({
       },
       {
         find: "@",
-        replacement: fileURLToPath(new URL("./src", import.meta.url)),
+        replacement: fileURLToPath(new URL("./apps/web/src", import.meta.url)),
       },
     ],
   },
@@ -26,7 +26,10 @@ export default defineConfig({
     include: ["tests/unit/**/*.test.ts"],
     coverage: {
       provider: "v8",
-      include: ["src/lib/finance/*.ts", "packages/shared/src/finance/*.ts"],
+      include: [
+        "packages/shared/src/finance/*.ts",
+        "packages/shared/src/billing.ts",
+      ],
       exclude: ["**/*.d.ts"],
       thresholds: { lines: 80, functions: 80, statements: 80, branches: 70 },
     },

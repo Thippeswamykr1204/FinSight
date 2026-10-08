@@ -5,16 +5,15 @@ import { parseArgs } from "node:util";
 
 const { values } = parseArgs({
   options: {
-    mode: { type: "string", default: "demo" },
-    output: { type: "string", default: ".env.local" },
+    mode: { type: "string", default: "local" },
+    output: { type: "string", default: ".env" },
   },
 });
-if (!["demo", "hosted"].includes(values.mode))
-  throw new Error("Use --mode demo or --mode hosted.");
+if (!["local", "production"].includes(values.mode))
+  throw new Error("Use --mode local or --mode production.");
 const settings =
-  values.mode === "hosted"
+  values.mode === "local"
     ? {
-        HOSTED_ENABLED: "true",
         HOSTED_LOCAL: "true",
         API_URL: "http://localhost:4000",
         API_ORIGIN: "http://localhost:4000",
@@ -22,13 +21,21 @@ const settings =
         NEXT_PUBLIC_APP_URL: "http://localhost:3000",
         BETTER_AUTH_SECRET: randomBytes(48).toString("base64url"),
         FIELD_ENCRYPTION_KEY: randomBytes(32).toString("hex"),
-        MONGODB_URI: "mongodb://mongo:27017/finsight?replicaSet=rs0",
-        REDIS_URL: "redis://redis:6379",
-        SMTP_HOST: "mailpit",
+        FIELD_ENCRYPTION_PREVIOUS_KEYS: "[]",
+        MONGODB_URI:
+          "mongodb://localhost:27017/finsight?replicaSet=rs0&directConnection=true",
+        REDIS_URL: "redis://localhost:6379",
+        SMTP_HOST: "localhost",
         SMTP_PORT: "1025",
         EMAIL_FROM: "FinSight Local <hello@example.test>",
       }
-    : {};
+    : {
+        BETTER_AUTH_SECRET: randomBytes(48).toString("base64url"),
+        FIELD_ENCRYPTION_KEY: randomBytes(32).toString("hex"),
+        FIELD_ENCRYPTION_PREVIOUS_KEYS: "[]",
+        NODE_ENV: "production",
+        HOSTED_LOCAL: "false",
+      };
 const content = readFileSync(".env.example", "utf8").replace(
   /^([A-Z_]+)="[^"]*"/gm,
   (line, name) => (name in settings ? `${name}="${settings[name]}"` : line),

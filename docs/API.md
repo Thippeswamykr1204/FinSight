@@ -17,13 +17,45 @@ Success envelope: `data` plus `requestId`. Error envelope: `error.code`, `error.
 | PATCH  | `/api/v1/workspaces/{id}/members/{userId}` | Owner; change a non-owner member’s role                                                                |
 | DELETE | `/api/v1/workspaces/{id}/members/{userId}` | Admin/owner subject to target-role checks; owners cannot be removed                                    |
 | POST   | `/api/v1/invitations/accept`           | Verified invited email; single-use, unexpired token                                                        |
-| GET    | `/api/v1/workspaces/{id}/audit`        | Admin/owner; latest 100 audit events                                                                       |
+| GET    | `/api/v1/workspaces/{id}/audit`        | Admin/owner with Business entitlement; latest 100 audit events                                                                       |
 | GET    | `/api/v1/workspaces/{id}/export`       | Owner; consistent JSON snapshot plus audit event                                                           |
 | DELETE | `/api/v1/workspaces/{id}`              | Owner + sign-in within 10 minutes; confirmation `DELETE {exact name}`; permanent ledger cascade            |
 | GET    | `/api/v1/me`                           | Personal profile, recorded notice acceptance, memberships and security metadata; no authentication secrets |
 | DELETE | `/api/v1/me`                           | Recent sign-in; confirmation `DELETE MY ACCOUNT`; rejects while the user owns workspaces                   |
 
-Identity endpoints are handled by Better Auth under `/api/identity`. Signup requires `noticeAccepted: true`; the current policy version/time are server-assigned, not client-controlled. Earlier users have no fabricated consent record. External OAuth creation without prior acceptance is refused. The previous `/api/auth/login` endpoint remains disabled legacy behavior and is not the new sign-in path.
+Identity endpoints are handled by Better Auth under `/api/identity`. Signup requires `noticeAccepted: true`; the current policy version/time are server-assigned, not client-controlled. Earlier users have no fabricated consent record. External OAuth creation without prior acceptance is refused.
+
+## Unified state, recurring rules and reports
+
+`GET /api/v1/workspaces/{id}/state` returns the persisted finance state and server
+entitlements. `GET/PATCH /api/v1/preferences` reads/validates user preferences.
+Recurring rules use `GET/POST /api/v1/workspaces/{id}/recurring` and
+`PATCH/DELETE /api/v1/workspaces/{id}/recurring/{ruleId}`; creating rules requires
+write access, Pro/Business and an idempotency key. Daily/weekly/monthly/yearly
+execution is transactional and keyed by rule/date.
+
+Reports use `GET/POST /api/v1/workspaces/{id}/reports` and owner
+`DELETE /api/v1/workspaces/{id}/reports/{reportId}`. Creation requires Pro/Business.
+Public `GET /api/v1/reports/shared/{token}` exposes only immutable summary totals
+until the seven-day expiry or revocation; it never exposes the underlying ledger.
+
+## Billing
+
+`GET /api/v1/billing` returns only the payer's profile, subscription/verified
+entitlement and invoice summaries. `PATCH /api/v1/billing/profile` validates an
+Indian billing address and optional GSTIN. `POST /api/v1/billing/checkout`,
+`/change` and `/cancel` require a recent sign-in and actor/payload-bound
+`Idempotency-Key`; checkout/change accept `{ plan: "pro" | "business" }`.
+`GET /api/v1/billing/checkout` resumes an unfinished checkout. `POST
+/api/v1/billing/refresh` reconciles provider state; `/verify` accepts the three
+Razorpay checkout fields without trusting browser ownership or payment status.
+`GET /api/v1/billing/invoices/{id}` returns an immutable payer-scoped invoice.
+
+Public `POST /api/v1/billing/webhook` accepts at most 256 KB of **raw JSON** and
+requires the exact-byte provider HMAC/event ID. Public `GET /api/v1/capabilities`
+reports configured Google/billing availability. Provider callbacks are separate
+from cookie/origin-gated user mutations. [BILLING](BILLING.md) documents GST,
+limits, durable reservations, cancellation and retained invoices.
 
 ## Finance command contract
 

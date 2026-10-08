@@ -39,3 +39,11 @@ export async function redisReady() {
     return false;
   }
 }
+
+export async function disconnectRedis() {
+  if (!instance) return;
+  const connection = instance;
+  instance = undefined;
+  if (["wait", "end"].includes(connection.status)) connection.disconnect();
+  else await connection.quit().catch(() => connection.disconnect());
+}

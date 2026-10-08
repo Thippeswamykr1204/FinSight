@@ -8,10 +8,12 @@ import {
   parsePaise,
   periodTotals,
   toPaise,
-} from "../../src/lib/finance/region";
-import { restoreDemo } from "../../src/lib/finance/storage";
-import { seedState, cashFlow } from "../../src/lib/finance/model";
-import { exportCsv, parseStatement } from "../../src/lib/finance/import-export";
+} from "@finsight/shared/finance/region";
+import { emptyState, cashFlow } from "@finsight/shared/finance/model";
+import {
+  exportCsv,
+  parseStatement,
+} from "@finsight/shared/finance/import-export";
 
 describe("India money and calendar", () => {
   it("uses lakh/crore grouping and compact units, including signs and carry", () => {
@@ -92,37 +94,19 @@ describe("India money and calendar", () => {
       ),
     ).toEqual({ income: 100, expenses: 25, saved: 75 });
   });
-  it("reseeds a legacy demo without relabeling or deleting its data", () => {
-    const legacy = JSON.stringify({
-      version: 2,
-      amount: 12345,
-      locale: "en-US",
-    });
-    const restored = restoreDemo(null, legacy);
-    expect(restored.reseeded).toBe(true);
-    expect(restored.state.currency).toBe("INR");
-    expect(restored.state.version).toBe(3);
-    expect(legacy).toContain("12345");
-    expect(restoreDemo(JSON.stringify(seedState()), legacy).reseeded).toBe(
-      false,
-    );
-    expect(() => restoreDemo(legacy, null)).toThrow();
-  });
-  it("seeds history and charts in the Kolkata month across the UTC month boundary", () => {
+  it("charts use the Kolkata month across the UTC month boundary", () => {
     const instant = new Date("2026-03-31T18:30:00Z");
-    const state = seedState(instant);
-    expect(state.transactions.find((row) => row.id === "salary")!.date).toBe(
-      "2026-04-01",
-    );
-    expect(state.transactions.find((row) => row.id === "income-1")!.date).toBe(
-      "2026-03-01",
-    );
+    const state = emptyState();
     expect(cashFlow(state, 3, instant).map((row) => row.month)).toEqual([
       "Feb",
       "Mar",
       "Apr",
     ]);
-    expect(state.goals[0].due).toBe("2026-10-01");
+    expect(
+      cashFlow(state, 3, instant).every(
+        (row) => row.income === 0 && row.expenses === 0,
+      ),
+    ).toBe(true);
   });
   it("imports Indian dates and commas, exports explicit INR and rejects foreign currency", () => {
     const rows = parseStatement(

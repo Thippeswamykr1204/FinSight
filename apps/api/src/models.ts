@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Schema, model, type InferSchemaType } from "mongoose";
+import { Schema, model } from "mongoose";
 
 const paise = {
   type: Number,
@@ -8,9 +8,9 @@ const paise = {
   max: 100_000_000_000,
 } as const;
 const timestamps = true;
-const id = { type: String, default: randomUUID } as const;
+const id = { type: String, default: () => randomUUID() } as const;
 
-export const workspaceSchema = new Schema(
+const workspaceSchema = new Schema(
   {
     _id: id,
     name: { type: String, required: true, trim: true, maxlength: 80 },
@@ -84,6 +84,13 @@ transactionSchema.index({ workspaceId: 1, accountId: 1, date: 1 });
 transactionSchema.index(
   { workspaceId: 1, importKey: 1 },
   { unique: true, partialFilterExpression: { importKey: { $type: "string" } } },
+);
+transactionSchema.index(
+  { workspaceId: 1, recurrenceKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { recurrenceKey: { $type: "string" } },
+  },
 );
 
 export const budgetSchema = new Schema(
@@ -164,4 +171,195 @@ export const AuditEvent = model("AuditEvent", auditSchema);
 export const IdempotencyKey = model("IdempotencyKey", idempotencySchema);
 export const Invitation = model("Invitation", invitationSchema);
 
-export type WorkspaceDocument = InferSchemaType<typeof workspaceSchema>;
+const preferencesSchema = new Schema(
+  {
+    _id: id,
+    userId: { type: String, required: true, unique: true },
+    name: { type: String, required: true, maxlength: 60 },
+    theme: { type: String, enum: ["light", "dark"], default: "light" },
+    locale: { type: String, enum: ["en-IN"], default: "en-IN" },
+    notifications: { type: Boolean, default: true },
+    dismissed: { type: [String], default: [] },
+    onboarded: { type: Boolean, default: false },
+    activeWorkspaceId: { type: String, default: null },
+    chartMonths: { type: Number, enum: [3, 6, 12], default: 6 },
+    scenarioMonths: { type: Number, enum: [3, 6, 12], default: 3 },
+  },
+  { timestamps },
+);
+export const UserPreferences = model("UserPreferences", preferencesSchema);
+
+const recurrenceSchema = new Schema(
+  {
+    _id: id,
+    workspaceId: { type: String, required: true, index: true },
+    actorId: { type: String, required: true },
+    transaction: { type: Schema.Types.Mixed, required: true },
+    frequency: {
+      type: String,
+      enum: ["daily", "weekly", "monthly", "yearly"],
+      required: true,
+    },
+    nextDue: { type: String, required: true },
+    anchorDay: { type: Number, required: true },
+    anchorMonth: { type: Number, required: true },
+    endDate: { type: String, default: null },
+    enabled: { type: Boolean, default: true },
+  },
+  { timestamps },
+);
+recurrenceSchema.index({ enabled: 1, nextDue: 1, workspaceId: 1 });
+export const RecurringRule = model("RecurringRule", recurrenceSchema);
+
+const reportSchema = new Schema(
+  {
+    _id: id,
+    workspaceId: { type: String, required: true, index: true },
+    actorId: { type: String, required: true },
+    tokenHash: { type: String, required: true, unique: true },
+    start: { type: String, required: true },
+    end: { type: String, required: true },
+    income: { type: Number, required: true },
+    expenses: { type: Number, required: true },
+    saved: { type: Number, required: true },
+    expiresAt: { type: Date, required: true, index: { expires: 0 } },
+  },
+  { timestamps },
+);
+export const SharedReport = model("SharedReport", reportSchema);
+
+const userOperationSchema = new Schema(
+  {
+    _id: id,
+    userId: { type: String, required: true },
+    key: { type: String, required: true },
+    fingerprint: { type: String, required: true },
+    response: { type: Schema.Types.Mixed, required: true },
+    expiresAt: { type: Date, required: true, index: { expires: 0 } },
+  },
+  { timestamps },
+);
+userOperationSchema.index({ userId: 1, key: 1 }, { unique: true });
+export const UserOperation = model("UserOperation", userOperationSchema);
+
+const billingAccountSchema = new Schema(
+  {
+    _id: { type: String, required: true },
+    revision: { type: Number, default: 0 },
+    profile: { type: String, default: null },
+    subscriptionId: { type: String, default: null },
+    plan: { type: String, enum: ["pro", "business"], default: null },
+    paidPlan: { type: String, enum: ["pro", "business"], default: null },
+    status: { type: String, default: "none" },
+    currentEnd: { type: Date, default: null },
+    paidThrough: { type: Date, default: null },
+    cancelAtCycleEnd: { type: Boolean, default: false },
+    scheduledPlan: { type: String, enum: ["pro", "business"], default: null },
+    recoveryUrl: { type: String, default: null },
+    pendingOperationId: { type: String, default: null },
+    lastDunningKey: { type: String, default: null },
+  },
+  { timestamps },
+);
+billingAccountSchema.index(
+  { subscriptionId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { subscriptionId: { $type: "string" } },
+  },
+);
+export const BillingAccount = model("BillingAccount", billingAccountSchema);
+
+const billingOperationSchema = new Schema(
+  {
+    _id: id,
+    userId: { type: String, required: true },
+    key: { type: String, required: true },
+    fingerprint: { type: String, required: true },
+    action: {
+      type: String,
+      enum: ["checkout", "change", "cancel"],
+      required: true,
+    },
+    plan: { type: String, enum: ["pro", "business"], default: null },
+    subscriptionId: { type: String, default: null },
+    status: {
+      type: String,
+      enum: ["pending", "succeeded", "failed"],
+      default: "pending",
+    },
+    response: { type: Schema.Types.Mixed, default: null },
+  },
+  { timestamps },
+);
+billingOperationSchema.index({ userId: 1, key: 1 }, { unique: true });
+export const BillingOperation = model(
+  "BillingOperation",
+  billingOperationSchema,
+);
+export const BillingSubscription = model(
+  "BillingSubscription",
+  new Schema(
+    {
+      _id: { type: String, required: true },
+      userId: { type: String, required: true, index: true },
+      parties: { type: String, required: true },
+    },
+    { timestamps },
+  ),
+);
+
+const webhookSchema = new Schema(
+  {
+    _id: { type: String, required: true },
+    digest: { type: String, required: true },
+    event: { type: String, required: true },
+    subscriptionId: { type: String, default: null },
+  },
+  { timestamps },
+);
+export const BillingWebhook = model("BillingWebhook", webhookSchema);
+const invoiceSchema = new Schema(
+  {
+    _id: id,
+    userId: { type: String, required: true, index: true },
+    number: { type: String, required: true, unique: true },
+    paymentId: { type: String, required: true, unique: true },
+    subscriptionId: { type: String, required: true },
+    issuedAt: { type: Date, required: true },
+    periodStart: { type: Date, required: true },
+    periodEnd: { type: Date, required: true },
+    plan: { type: String, enum: ["pro", "business"], required: true },
+    testMode: { type: Boolean, required: true },
+    base: paise,
+    gst: paise,
+    total: paise,
+    cgst: paise,
+    sgst: paise,
+    igst: paise,
+    // Immutable encrypted supplier/recipient snapshot, separate from editable profile.
+    parties: { type: String, required: true },
+    retainUntil: { type: Date, required: true, index: { expires: 0 } },
+  },
+  { timestamps },
+);
+invoiceSchema.index({ userId: 1, issuedAt: -1, _id: -1 });
+export const BillingInvoice = model("BillingInvoice", invoiceSchema);
+export const InvoiceCounter = model(
+  "InvoiceCounter",
+  new Schema({
+    _id: { type: String, required: true },
+    value: { type: Number, default: 0 },
+  }),
+);
+const usageSchema = new Schema(
+  {
+    _id: id,
+    workspaceId: { type: String, required: true },
+    month: { type: String, required: true },
+    transactions: { type: Number, default: 0 },
+  },
+  { timestamps },
+);
+usageSchema.index({ workspaceId: 1, month: 1 }, { unique: true });
+export const WorkspaceUsage = model("WorkspaceUsage", usageSchema);

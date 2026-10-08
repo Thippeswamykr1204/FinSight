@@ -4,7 +4,12 @@ const require = createRequire(import.meta.url);
 require("@next/env").loadEnvConfig(process.cwd());
 const child = spawn(
   process.execPath,
-  ["node_modules/next/dist/bin/next", "start", ...process.argv.slice(2)],
+  [
+    "node_modules/next/dist/bin/next",
+    "start",
+    "apps/web",
+    ...process.argv.slice(2),
+  ],
   { stdio: "inherit" },
 );
 for (const signal of ["SIGINT", "SIGTERM"])

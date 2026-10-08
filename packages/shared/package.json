@@ -18,7 +18,6 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "vitest run --config vitest.config.mts"
+    "build": "tsc -p tsconfig.json"
   }
 }

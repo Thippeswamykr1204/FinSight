@@ -1,0 +1,60 @@
+services:
+  - type: web
+    name: finsight-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api
+    healthCheckPath: /ready
+    region: singapore
+    autoDeployTrigger: checksPass
+    maxShutdownDelaySeconds: 35
+    envVars:
+      - fromGroup: finsight-api-runtime
+      - key: NODE_ENV
+        value: production
+      - key: HOSTED_LOCAL
+        value: "false"
+      - key: API_PORT
+        value: "4000"
+  - type: worker
+    name: finsight-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api
+    dockerCommand: node apps/api/dist/worker.js
+    region: singapore
+    autoDeployTrigger: checksPass
+    maxShutdownDelaySeconds: 35
+    envVars:
+      - fromGroup: finsight-api-runtime
+      - key: NODE_ENV
+        value: production
+      - key: HOSTED_LOCAL
+        value: "false"
+  - type: web
+    name: finsight-web
+    runtime: docker
+    dockerfilePath: ./Dockerfile.web
+    healthCheckPath: /api/ready
+    region: singapore
+    autoDeployTrigger: checksPass
+    maxShutdownDelaySeconds: 35
+    envVars:
+      - key: API_URL
+        fromService:
+          type: web
+          name: finsight-api
+          envVarKey: API_ORIGIN
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: PRIVACY_CONTACT_EMAIL
+        sync: false
+      - key: GRIEVANCE_OFFICER_NAME
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: SENTRY_RELEASE
+        sync: false
+envVarGroups:
+  - name: finsight-api-runtime
+    envVars:
+      - key: BETTER_AUTH_SECRET
+        generateValue: true

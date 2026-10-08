@@ -77,6 +77,7 @@ export const transactionSchema = z.object({
   category: z.enum(categories),
   accountId: z.string().min(1),
   note: z.string().max(500).default(""),
+  version: z.number().int().positive().optional(),
 });
 export const budgetSchema = z.object({
   id: z.string().min(1),
@@ -126,16 +127,20 @@ export const stateSchema = z.object({
   version: z.literal(3),
   currency: z.literal(region.currency),
   timeZone: z.literal(region.timeZone),
-  name: z.string().min(1).max(60),
+  name: z.string().trim().min(1).max(60),
   transactions: z.array(transactionSchema).max(10000),
   budgets: z.array(budgetSchema).max(500),
   goals: z.array(goalSchema).max(100),
   accounts: z.array(accountSchema).max(100),
   onboarded: z.boolean(),
-  dismissed: z.array(z.string()),
+  dismissed: z.array(z.string().max(120)).max(1000),
   theme: z.enum(["light", "dark"]),
   locale: z.literal(region.locale),
   notifications: z.boolean(),
+  chartMonths: z.union([z.literal(3), z.literal(6), z.literal(12)]).default(6),
+  scenarioMonths: z
+    .union([z.literal(3), z.literal(6), z.literal(12)])
+    .default(3),
 });
 export type Transaction = z.infer<typeof transactionSchema>;
 export type Budget = z.infer<typeof budgetSchema>;
@@ -149,149 +154,23 @@ export const seasonalGoals = [
   "Family festival travel",
 ] as const;
 
-export function seedState(now = new Date()): FinanceState {
-  const today = localDate(now);
-  const month = today.slice(0, 7);
-  const year = Number(today.slice(0, 4));
-  const monthIndex = Number(today.slice(5, 7)) - 1;
-  const accounts: Account[] = [
-    {
-      id: "checking",
-      name: "HDFC savings",
-      type: "Savings",
-      dueDate: null,
-      openingBalance: 6100000,
-    },
-    {
-      id: "card",
-      name: "ICICI credit card",
-      type: "Credit Card",
-      dueDate: `${month}-20`,
-      openingBalance: -980000,
-    },
-    {
-      id: "investments",
-      name: "Mutual fund portfolio",
-      type: "Mutual funds",
-      dueDate: null,
-      openingBalance: 18240000,
-    },
-  ];
-  const transactions: Transaction[] = [];
-  const add = (
-    id: string,
-    merchant: string,
-    amount: number,
-    day: number,
-    category: Transaction["category"],
-    accountId = "checking",
-    type: Transaction["type"] = "expense",
-  ) =>
-    transactions.push({
-      id,
-      merchant,
-      amount,
-      date: `${month}-${String(Math.min(day, Number(today.slice(8)))).padStart(2, "0")}`,
-      category,
-      accountId,
-      type,
-      note: "Sample transaction",
-    });
-  add(
-    "salary",
-    "Namma Design — salary",
-    12500000,
-    1,
-    "Income",
-    "checking",
-    "income",
-  );
-  add(
-    "freelance",
-    "Freelance design — UPI",
-    1800000,
-    2,
-    "Income",
-    "checking",
-    "income",
-  );
-  add("rent", "Bengaluru rent — UPI", 2800000, 1, "Rent");
-  add("food1", "BigBasket groceries", 486250, 3, "Groceries", "card");
-  add("food2", "Swiggy — UPI", 87500, 4, "Dining");
-  add("food3", "Nandini milk & vegetables — UPI", 162800, 2, "Groceries");
-  add("emi", "Home loan EMI", 1850000, 3, "EMI/Loans");
-  add("energy", "BESCOM electricity", 218000, 2, "Utilities");
-  add("travel", "IRCTC weekend trip", 286000, 3, "Travel", "card");
-  add("fuel", "Indian Oil fuel", 240000, 2, "Fuel", "card");
-  add("recharge", "Jio recharge", 79900, 1, "Mobile/DTH/Internet");
-  add("sip", "Mutual fund SIP earmark", 1500000, 2, "SIP/Mutual funds");
-  for (let back = 1; back <= 11; back++) {
-    const prefix = localDate(
-      new Date(Date.UTC(year, monthIndex - back, 1)),
-    ).slice(0, 7);
-    transactions.push({
-      id: `income-${back}`,
-      merchant: "Namma Design — salary",
-      amount: 12000000 + (11 - back) * 50000,
-      date: `${prefix}-01`,
-      type: "income",
-      category: "Income",
-      accountId: "checking",
-      note: "Sample monthly income",
-    });
-    transactions.push({
-      id: `expense-${back}`,
-      merchant: "Monthly living expenses",
-      amount: 7600000 + (back % 3) * 135000,
-      date: `${prefix}-08`,
-      type: "expense",
-      category: "Home",
-      accountId: "checking",
-      note: "Sample historical summary",
-    });
-  }
+export function emptyState(name = "Your"): FinanceState {
   return {
     version: 3,
     currency: region.currency,
     timeZone: region.timeZone,
-    name: "Ananya",
-    transactions,
-    accounts,
-    budgets: [
-      { id: "b1", category: "Rent", limit: 3000000, month },
-      { id: "b2", category: "Groceries", limit: 1200000, month },
-      { id: "b3", category: "Transport", limit: 450000, month },
-      { id: "b4", category: "Mobile/DTH/Internet", limit: 150000, month },
-      { id: "b5", category: "Travel", limit: 500000, month },
-    ],
-    goals: [
-      {
-        id: "g1",
-        name: "Emergency fund",
-        saved: 24000000,
-        target: 40000000,
-        due: localDate(new Date(Date.UTC(year, monthIndex + 6, 1))),
-      },
-      {
-        id: "g2",
-        name: "Coorg family holiday",
-        saved: 2180000,
-        target: 6000000,
-        due: localDate(new Date(Date.UTC(year, monthIndex + 8, 1))),
-      },
-      {
-        id: "g3",
-        name: "New studio setup",
-        saved: 920000,
-        target: 12500000,
-        due: localDate(new Date(Date.UTC(year, monthIndex + 12, 1))),
-      },
-    ],
+    name,
+    transactions: [],
+    accounts: [],
+    budgets: [],
+    goals: [],
     onboarded: false,
     dismissed: [],
     theme: "light",
     locale: region.locale,
     notifications: true,
+    chartMonths: 6,
+    scenarioMonths: 3,
   };
 }
 
