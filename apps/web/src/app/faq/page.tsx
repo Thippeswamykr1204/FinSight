@@ -43,7 +43,7 @@ export default function FAQPage() {
           ],
           [
             "Can I subscribe to Pro?",
-            "The Free tier provides manual tracking, imports, budgets, goals and account security. Paid choices are displayed only when billing is enabled for your deployment.",
+            "The Free plan provides manual tracking, imports, budgets, goals and account security. Paid choices are displayed only when billing is enabled for your deployment.",
           ],
         ].map(([question, answer]) => (
           <details key={question} className="group py-6">

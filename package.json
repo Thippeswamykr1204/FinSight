@@ -1,6 +1,6 @@
 {
   "name": "finsight",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "description": "India-first personal finance workspace with integer-paise accounting and secure multi-tenant MongoDB storage.",
   "workspaces": [
@@ -37,6 +37,7 @@
     "shared:build": "npm run build --workspace @finsight/shared",
     "shared:test": "vitest run tests/unit/finance.test.ts tests/unit/india.test.ts tests/unit/planning.test.ts",
     "env:init": "node scripts/init-env.mjs",
+    "preflight": "node --import tsx scripts/preflight.mts",
     "fields:rekey": "node --env-file-if-exists=.env --import tsx scripts/rekey.mts",
     "build": "npm run shared:build && npm run build --workspace @finsight/web && npm run build --workspace @finsight/api",
     "start": "node scripts/start.mjs",
@@ -46,8 +47,9 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "tsx scripts/e2e.mts",
     "test:api": "npm run test --workspace @finsight/api",
+    "test:api:coverage": "npm run test:coverage --workspace @finsight/api",
     "test:integration": "npm run test:integration --workspace @finsight/api",
-    "check": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:api && npm run test:integration && npm run build",
+    "check": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:api:coverage && npm run test:integration && npm run build",
     "format": "prettier --write 'apps/**/*.{ts,tsx,css,json,js,mts}' 'packages/**/*.{ts,tsx,json}' 'tests/**/*.ts' 'scripts/**/*.{ts,mjs,mts}' '*.{json,js,ts,mts,yaml}'",
     "format:check": "prettier --check 'apps/**/*.{ts,tsx,css,json,js,mts}' 'packages/**/*.{ts,tsx,json}' 'tests/**/*.ts' 'scripts/**/*.{ts,mjs,mts}' '*.{json,js,ts,mts,yaml}'"
   },

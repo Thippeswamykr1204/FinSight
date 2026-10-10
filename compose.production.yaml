@@ -1,11 +1,29 @@
 name: finsight-production
+
+# Shared runtime hardening for every service.
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 35s
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 256
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
 services:
   web:
+    <<: *service-defaults
     build:
       context: .
       dockerfile: Dockerfile.web
       args:
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set the HTTPS web origin}
+        VERSION: ${FINSIGHT_VERSION:-dev}
+        REVISION: ${FINSIGHT_REVISION:-unknown}
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set the HTTPS web origin}
@@ -17,12 +35,20 @@ services:
     ports: ["127.0.0.1:${FINSIGHT_WEB_PORT:-3000}:3000"]
     depends_on:
       api: { condition: service_healthy }
-    restart: unless-stopped
-    init: true
-    stop_grace_period: 35s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
   api:
-    build: { context: ., dockerfile: Dockerfile.api }
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+      args:
+        VERSION: ${FINSIGHT_VERSION:-dev}
+        REVISION: ${FINSIGHT_REVISION:-unknown}
     env_file: .env
+    read_only: true
+    tmpfs: ["/tmp"]
     environment:
       NODE_ENV: production
       HOSTED_LOCAL: "false"
@@ -40,12 +66,20 @@ services:
       PRIVACY_CONTACT_EMAIL: ${PRIVACY_CONTACT_EMAIL:?Set the operator contact}
       GRIEVANCE_OFFICER_NAME: ${GRIEVANCE_OFFICER_NAME:?Set the grievance officer}
     expose: ["4000"]
-    restart: unless-stopped
-    init: true
-    stop_grace_period: 35s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 768M }
   worker:
-    build: { context: ., dockerfile: Dockerfile.api }
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+      args:
+        VERSION: ${FINSIGHT_VERSION:-dev}
+        REVISION: ${FINSIGHT_REVISION:-unknown}
     env_file: .env
+    read_only: true
+    tmpfs: ["/tmp"]
     command: ["node", "apps/api/dist/worker.js"]
     environment:
       NODE_ENV: production
@@ -67,6 +101,6 @@ services:
       retries: 3
     depends_on:
       api: { condition: service_healthy }
-    restart: unless-stopped
-    init: true
-    stop_grace_period: 35s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }

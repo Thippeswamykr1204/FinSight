@@ -1,7 +1,9 @@
 import { createApp } from "./app";
 import { loadConfig } from "./config";
 import { connectDatabase, disconnectDatabase } from "./db";
-import { connectRedis, disconnectRedis } from "./redis";
+import { getDb } from "./mongo";
+import { connectRedis, disconnectRedis, redis } from "./redis";
+import { verifyStores } from "./store-checks";
 import { startMonitoring, captureFailure, flushMonitoring } from "./monitoring";
 
 async function main() {
@@ -9,6 +11,11 @@ async function main() {
   startMonitoring();
   await connectDatabase();
   await connectRedis();
+  await verifyStores({
+    database: getDb(),
+    redis: redis(),
+    production: config.NODE_ENV === "production",
+  });
   const app = createApp();
   const server = app.listen(config.API_PORT, config.API_HOST, () => {
     console.info(

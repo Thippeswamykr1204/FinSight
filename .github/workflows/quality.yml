@@ -2,9 +2,8 @@ name: Quality
 on:
   pull_request:
   push:
-    branches: [main, rebuild/v2, feat/india-inr, chore/portfolio-cleanup]
-permissions:
-  contents: read
+    branches: [main]
+permissions: {}
 concurrency:
   group: quality-${{ github.ref }}
   cancel-in-progress: true
@@ -12,20 +11,24 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     env:
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          node-version: 22
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:coverage
-      - run: npm run test:api
+      - run: npm run test:api:coverage
       - run: npm run test:integration
       - run: npm audit --omit=dev --audit-level=high
       - run: npm audit --audit-level=low
@@ -34,25 +37,31 @@ jobs:
       - run: npm run test:e2e
         env:
           E2E_PRODUCTION: "1"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
           name: browser-failure-artifacts
           path: test-results/
           retention-days: 7
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: unit-coverage
-          path: coverage/
+          name: coverage
+          path: |
+            coverage/
+            apps/api/coverage/
           retention-days: 7
   container:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          node-version: 22
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
       - run: npm run env:init
       - run: docker compose config --quiet
       - run: docker compose up --build -d --wait

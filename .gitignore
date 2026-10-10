@@ -16,7 +16,7 @@ next-env.d.ts
 .env
 .env.*
 !.env.example
-!.env.hosted.example
+.env*.local
 
 # Local secrets and generated clients
 .local/
@@ -50,3 +50,7 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 *.pem
+*.key
+*.p12
+.turbo/
+.cache/

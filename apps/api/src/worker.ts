@@ -1,17 +1,23 @@
-import { connectMongo, disconnectMongo, mongoReady } from "./mongo";
+import { connectMongo, disconnectMongo, getDb, mongoReady } from "./mongo";
 import { startEmailWorker } from "./email";
 import { loadConfig } from "./config";
 import { runRecurrences } from "./services";
 import { connectRedis, disconnectRedis, redis } from "./redis";
 import { reconcileBilling } from "./billing";
+import { verifyStores } from "./store-checks";
 import { hostname } from "node:os";
 import { startMonitoring, captureFailure, flushMonitoring } from "./monitoring";
 
 async function main() {
-  loadConfig();
+  const config = loadConfig();
   startMonitoring();
   await connectMongo();
   await connectRedis();
+  await verifyStores({
+    database: getDb(),
+    redis: redis(),
+    production: config.NODE_ENV === "production",
+  });
   const worker = startEmailWorker();
   const heartbeatKey = `finsight:worker:${hostname()}:heartbeat`;
   const heartbeat = async () => {

@@ -1,7 +1,6 @@
 # Security
 
-Report vulnerabilities privately through the repository owner's GitHub security
-channel. Do not include credentials or customer records in public issues.
+See the root [vulnerability-reporting policy](../SECURITY.md) for private reports.
 
 ## Controls
 
@@ -52,3 +51,19 @@ encrypted backups, monitored queue delivery and a real transactional mail provid
 Validate callback domains and production sender deliverability in the deployed
 environment. Operator privacy and grievance contacts are required for public boot.
 No bank credentials or card PAN/CVC are collected by FinSight.
+
+## Known limitations
+
+- Pages that are pre-rendered at build time (marketing, legal and calculator
+  pages) cannot receive a per-request nonce, so their Content Security Policy keeps
+  `script-src 'unsafe-inline'`. These pages render no user-supplied content. The
+  authenticated application and sign-in routes use a nonce-based policy.
+- The shared-report page (`/reports/[token]`) is rendered per request but is not
+  yet covered by the nonce-based policy. It renders only numeric totals and dates
+  returned by the API, escaped by React. Moving it to the nonce policy is planned
+  and needs browser verification.
+- Deployments behind serverless web hosting cannot allowlist the web tier's
+  addresses, so per-client rate limits require a private-network topology. See
+  [DEPLOYMENT](DEPLOYMENT.md#proxy-trust-and-rate-limits).
+- ESLint 8 is end-of-life. It has no known vulnerability that affects the shipped
+  application, and migrating to the current major version is tracked as maintenance.
