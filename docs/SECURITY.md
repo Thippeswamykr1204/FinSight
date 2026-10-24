@@ -1,69 +1,30 @@
-# Security
+# Security notes
 
-See the root [vulnerability-reporting policy](../SECURITY.md) for private reports.
+## Identity and sessions
 
-## Controls
+- Passwords use Argon2id with a bounded memory and time cost.
+- Access tokens expire after fifteen minutes and are held in HTTP-only cookies by default.
+- Refresh tokens are opaque, hashed at rest, rotated on use, and tied to a refresh family. Reuse of a revoked token revokes the family.
+- Session cookies are `Secure` on HTTPS deployments and use `SameSite=Lax`.
+- Authentication endpoints are rate-limited by client address. API calls are rate-limited by client address in this release; setting `REDIS_URL` makes the limiter shared across API instances.
 
-- Better Auth verifies sessions server-side; private finance routes resolve the
-  principal from cookies, never a caller-provided user ID.
-- Workspace membership and role checks scope queries and mutations. Replica-set
-  transactions serialize related ledger, idempotency and audit writes.
-- Zod validates financial values, dates, commands and import limits. Money is
-  bounded integer paise. CSV exports escape spreadsheet formulas.
-- Verified email, passkeys, confirmed TOTP, recovery codes, magic links and session
-  controls support account security. Destructive actions require a recent session.
-- Cookies are HttpOnly/SameSite, with Secure enabled on HTTPS. Origin checks, CSP,
-  frame denial, no-sniff, HSTS and request IDs protect the HTTP boundary.
-- Redis rate limits are shared between API instances. A failed limiter cannot
-  authorize a financial request.
-- Email bodies are encrypted with a dedicated AES-GCM key; logs redact cookies,
-  passwords and tokens. Delivered bodies are cleared and outbox retention is bounded.
-- Personal export excludes password hashes, authentication tokens and MFA secrets.
-  Deletion affects the primary store; downloaded exports, delivered email and
-  retained backups follow their respective retention policies.
-- Razorpay webhooks authenticate the exact raw bytes before parsing. Browser
-  checkout results cannot grant membership; provider ownership, captured INR
-  amount and paid period are verified. Duplicate event/payment IDs cannot create
-  duplicate invoices. Uncertain checkout creation remains reserved for reconciliation.
-- Billing profiles and immutable invoice/subscription party snapshots use separate
-  authenticated field purposes. Account deletion anonymizes retained invoice links;
-  encrypted accounting records retain their eight-year TTL policy.
-- Optional server monitoring disables payload collection and replaces exception
-  messages. It does not collect browser financial telemetry. Trusted proxy addresses
-  are explicitly allowlisted; incoming client-IP identity headers are overwritten.
+## Request protection
 
-## Secrets
+- CORS allows exactly `WEB_ORIGIN` and credentials.
+- Mutations require a matching non-HTTP-only CSRF cookie and `X-CSRF-Token` header, plus an allowed `Origin` when a browser supplies one.
+- Helmet sets security headers. The app does not render untrusted HTML and React escapes user-provided text.
+- Zod schemas reject unknown request keys on sensitive inputs. Database filters are constructed from validated scalar values; user objects are never passed directly to MongoDB filters.
+- The API does not fetch user-supplied URLs, so there is no user-controlled outbound HTTP feature. If one is added, use an allowlist, DNS/IP validation, redirect limits, and an egress proxy.
+- JSON requests are capped at 1 MB and list queries have explicit limits.
 
-The API and worker require explicit generated `BETTER_AUTH_SECRET` and
-`FIELD_ENCRYPTION_KEY` in every environment. Known auth defaults, zero keys and
-malformed encryption keys fail boot. Compose requires `.env` and has no secret
-fallback. `npm run env:init` uses cryptographic randomness and exclusive `0600`
-file creation. Runtime secrets are not Docker build arguments.
+## Data protection
 
-See [KEY_ROTATION](KEY_ROTATION.md) for retained-key decryption and rotation.
-Rotate mail and identity-provider credentials independently. Keep environment
-files, build output, coverage and browser traces outside release source/images.
+Email addresses are stored as a lookup hash plus AES-256-GCM ciphertext. The encryption key is provided only to the API process. Passwords, refresh tokens, and invitation tokens are stored as one-way hashes or Argon2id encodings.
 
-## Operations
+Financial data is not written to localStorage, sessionStorage, service-worker caches, logs, or error messages. Exports are authorized, bounded, and audited. Account and workspace deletion require exact confirmation text.
 
-Use HTTPS domains, restricted MongoDB/Redis networking, a managed replica set,
-encrypted backups, monitored queue delivery and a real transactional mail provider.
-Validate callback domains and production sender deliverability in the deployed
-environment. Operator privacy and grievance contacts are required for public boot.
-No bank credentials or card PAN/CVC are collected by FinSight.
+## Operational controls
 
-## Known limitations
+Production refuses to boot without explicit MongoDB, JWT, encryption, HTTPS-origin, and privacy-contact configuration. Request logs contain request IDs, method, path, status, and duration but redact cookies and authorization material. `/health` is liveness; `/ready` verifies the database connection.
 
-- Pages that are pre-rendered at build time (marketing, legal and calculator
-  pages) cannot receive a per-request nonce, so their Content Security Policy keeps
-  `script-src 'unsafe-inline'`. These pages render no user-supplied content. The
-  authenticated application and sign-in routes use a nonce-based policy.
-- The shared-report page (`/reports/[token]`) is rendered per request but is not
-  yet covered by the nonce-based policy. It renders only numeric totals and dates
-  returned by the API, escaped by React. Moving it to the nonce policy is planned
-  and needs browser verification.
-- Deployments behind serverless web hosting cannot allowlist the web tier's
-  addresses, so per-client rate limits require a private-network topology. See
-  [DEPLOYMENT](DEPLOYMENT.md#proxy-trust-and-rate-limits).
-- ESLint 8 is end-of-life. It has no known vulnerability that affects the shipped
-  application, and migrating to the current major version is tracked as maintenance.
+The operator must still provide HTTPS, MongoDB network restrictions, secret storage, backup and restoration checks, dependency review, alerting, privacy notices, retention rules, and incident response. This repository does not claim a compliance certification.

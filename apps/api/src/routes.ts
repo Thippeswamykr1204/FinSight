@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   Router,
   type Request,
@@ -6,67 +5,14 @@ import {
   type NextFunction,
 } from "express";
 import { z } from "zod";
-import { getAuth } from "./auth";
-import { errorHandler, HttpError, sendData } from "./http";
-import { principal } from "./principal";
-import {
-  acceptInvitation,
-  authorize,
-  createWorkspace,
-  deleteAccount,
-  entries,
-  executeCommand,
-  inviteMember,
-  listWorkspaces,
-  overview,
-  removeMember,
-  financeState,
-  preferences,
-  savePreferences,
-  createRecurrence,
-  createReport,
-  digest,
-  deleteWorkspace,
-  exportWorkspace,
-} from "./services";
-import {
-  commandSchema,
-  invitationInput,
-  querySchema,
-  roleInput,
-  workspaceBody,
-  idSchema,
-  preferencesInput,
-  recurrenceInput,
-  reportInput,
-} from "./contracts";
-import {
-  AuditEvent,
-  Workspace,
-  Membership,
-  RecurringRule,
-  SharedReport,
-  Invitation,
-} from "./models";
-import { consumeLimit } from "./redis";
-import { workspaceWrite } from "./repositories/unit-of-work";
-import { getDb } from "./mongo";
-import {
-  billingProfileSchema,
-  checkoutInput,
-  checkoutVerification,
-} from "@finsight/shared";
-import {
-  billingSummary,
-  billingInvoice,
-  saveBillingProfile,
-  changeBilling,
-  refreshBilling,
-  verifyCheckout,
-  resumeCheckout,
-  requireWorkspaceFeature,
-} from "./billing";
+import { deleteUser, exportUser, getUser, updateUser } from "./services.js";
+import * as services from "./services.js";
+import { login, logout, register, rotate } from "./auth.js";
+import { authenticate, principal, requireMembership } from "./middleware.js";
+import { sendData } from "./http.js";
+import { RefreshSession } from "./models.js";
 
+const router = Router();
 const asyncRoute =
   (
     handler: (
@@ -77,709 +23,552 @@ const asyncRoute =
   ) =>
   (request: Request, response: Response, next: NextFunction) =>
     void handler(request, response, next).catch(next);
-const api = Router();
-const param = (request: Request, name: string) => {
-  const value = request.params[name];
-  return idSchema.parse(Array.isArray(value) ? (value[0] ?? "") : value);
-};
+const uuid = z.string().uuid();
+const requestId = (response: Response) =>
+  String(response.getHeader("X-Request-Id") ?? "unknown");
+const body = <T extends z.ZodType>(schema: T, request: Request) =>
+  schema.parse(request.body) as z.infer<T>;
+const workspaceId = (request: Request) =>
+  uuid.parse(request.params.workspaceId);
+const id = (request: Request) => uuid.parse(request.params.id);
+const idempotency = (request: Request) =>
+  request.header("idempotency-key") ?? undefined;
 
-function mutationOrigin(request: Request) {
-  const origin = request.header("origin");
-  if (
-    origin &&
-    origin !== process.env.WEB_ORIGIN &&
-    origin !== process.env.API_ORIGIN
-  )
-    throw new HttpError(403, "FORBIDDEN", "A same-origin request is required.");
-}
-async function actor(request: Request) {
-  return principal(request);
-}
-function key(request: Request) {
-  const value = request.header("idempotency-key");
-  if (!value || !/^[a-zA-Z0-9_-]{8,128}$/.test(value))
-    throw new HttpError(422, "VALIDATION", "Supply a valid Idempotency-Key.");
-  return value;
-}
+const registerInput = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    email: z.string().email().max(254),
+    password: z.string().min(12).max(128),
+    privacyAccepted: z.literal(true),
+  })
+  .strict();
+const loginInput = z
+  .object({
+    email: z.string().email().max(254),
+    password: z.string().min(1).max(128),
+  })
+  .strict();
+const workspaceInput = z
+  .object({ name: z.string().trim().min(1).max(80) })
+  .strict();
+const transactionUpdate = z
+  .object({
+    version: z.number().int().positive(),
+    data: z.record(z.string(), z.unknown()),
+  })
+  .strict();
 
-api.get(
-  "/billing",
-  asyncRoute(async (request, response) =>
-    sendData(response, await billingSummary(await actor(request))),
-  ),
-);
-api.get(
-  "/billing/checkout",
-  asyncRoute(async (request, response) =>
-    sendData(response, await resumeCheckout(await actor(request))),
-  ),
-);
-api.patch(
-  "/billing/profile",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    return sendData(
-      response,
-      await saveBillingProfile(
-        await actor(request),
-        billingProfileSchema.parse(request.body),
-      ),
-    );
-  }),
-);
-api.post(
-  "/billing/checkout",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    return sendData(
-      response,
-      await changeBilling(
-        await actor(request),
-        key(request),
-        "checkout",
-        checkoutInput.parse(request.body).plan,
-      ),
-      201,
-    );
-  }),
-);
-api.post(
-  "/billing/change",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    return sendData(
-      response,
-      await changeBilling(
-        await actor(request),
-        key(request),
-        "change",
-        checkoutInput.parse(request.body).plan,
-      ),
-    );
-  }),
-);
-api.post(
-  "/billing/cancel",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    z.object({}).strict().parse(request.body);
-    return sendData(
-      response,
-      await changeBilling(await actor(request), key(request), "cancel"),
-    );
-  }),
-);
-api.post(
-  "/billing/refresh",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    z.object({}).strict().parse(request.body);
-    return sendData(response, await refreshBilling(await actor(request)));
-  }),
-);
-api.post(
-  "/billing/verify",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    return sendData(
-      response,
-      await verifyCheckout(
-        await actor(request),
-        checkoutVerification.parse(request.body),
-      ),
-    );
-  }),
-);
-api.get(
-  "/billing/invoices/:id",
+router.post(
+  "/auth/register",
   asyncRoute(async (request, response) =>
     sendData(
       response,
-      await billingInvoice(await actor(request), param(request, "id")),
+      await register(
+        body(registerInput, request),
+        requestId(response),
+        request,
+        response,
+      ),
+      201,
     ),
   ),
 );
-
-api.get(
-  "/workspaces",
-  asyncRoute(async (request, response) =>
-    sendData(response, await listWorkspaces(await actor(request))),
-  ),
-);
-api.post(
-  "/workspaces",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    const principalValue = await actor(request);
-    const input = workspaceBody.parse(request.body);
-    return sendData(
-      response,
-      await createWorkspace(
-        principalValue,
-        input.name,
-        String(response.getHeader("X-Request-Id")),
-        key(request),
-      ),
-      201,
-    );
-  }),
-);
-api.get(
-  "/workspaces/:workspaceId/state",
+router.post(
+  "/auth/login",
   asyncRoute(async (request, response) =>
     sendData(
       response,
-      await financeState(await actor(request), param(request, "workspaceId")),
+      await login(
+        body(loginInput, request).email,
+        body(loginInput, request).password,
+        request,
+        response,
+      ),
     ),
   ),
 );
-api.get(
-  "/preferences",
+router.post(
+  "/auth/refresh",
   asyncRoute(async (request, response) =>
-    sendData(response, await preferences(await actor(request))),
+    sendData(response, await rotate(request, response)),
   ),
 );
-api.patch(
-  "/preferences",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    return sendData(
-      response,
-      await savePreferences(
-        await actor(request),
-        preferencesInput.parse(request.body),
-      ),
-    );
-  }),
+router.post(
+  "/auth/logout",
+  authenticate,
+  asyncRoute(async (request, response) =>
+    sendData(response, await logout(principal(request), response)),
+  ),
 );
-api.get(
-  "/workspaces/:workspaceId/recurring",
-  asyncRoute(async (request, response) => {
-    const workspaceId = param(request, "workspaceId");
-    await authorize(await actor(request), workspaceId);
-    return sendData(
-      response,
-      (
-        await RecurringRule.find({ workspaceId }).sort({ createdAt: 1 }).lean()
-      ).map((rule) => ({ ...rule, id: String(rule._id), _id: undefined })),
-    );
-  }),
+router.get(
+  "/auth/me",
+  authenticate,
+  asyncRoute(async (request, response) =>
+    sendData(response, await getUser(principal(request))),
+  ),
 );
-api.post(
-  "/workspaces/:workspaceId/recurring",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    return sendData(
+
+router.get(
+  "/me/export",
+  authenticate,
+  asyncRoute(async (request, response) =>
+    sendData(
       response,
-      await createRecurrence(
-        await actor(request),
-        param(request, "workspaceId"),
-        recurrenceInput.parse(request.body),
-        String(response.getHeader("X-Request-Id")),
-        key(request),
-      ),
-      201,
-    );
-  }),
+      await exportUser(principal(request), requestId(response)),
+    ),
+  ),
 );
-api.patch(
-  "/workspaces/:workspaceId/recurring/:id",
+router.patch(
+  "/me",
+  authenticate,
   asyncRoute(async (request, response) => {
-    mutationOrigin(request);
     const input = z
-      .object({ enabled: z.boolean() })
+      .object({
+        name: z.string().trim().min(1).max(60).optional(),
+        theme: z.enum(["light", "dark"]).optional(),
+        activeWorkspaceId: z.string().uuid().nullable().optional(),
+      })
       .strict()
       .parse(request.body);
-    const workspaceId = param(request, "workspaceId");
     return sendData(
       response,
-      await workspaceWrite(
-        await actor(request),
-        workspaceId,
-        "write",
-        async () => {
-          const rule = await RecurringRule.findOneAndUpdate(
-            { workspaceId, _id: param(request, "id") },
-            { $set: input },
-            { new: true },
-          ).lean();
-          if (!rule)
-            throw new HttpError(404, "NOT_FOUND", "Recurring rule not found.");
-          return { ...rule, id: String(rule._id), _id: undefined };
-        },
-      ),
-    );
-  }),
-);
-api.get(
-  "/workspaces/:workspaceId/invitations",
-  asyncRoute(async (request, response) => {
-    const workspaceId = param(request, "workspaceId");
-    await authorize(await actor(request), workspaceId, "members");
-    return sendData(
-      response,
-      (
-        await Invitation.find(
-          { workspaceId, acceptedAt: null, expiresAt: { $gt: new Date() } },
-          { tokenHash: 0 },
-        )
-          .sort({ createdAt: 1 })
-          .lean()
-      ).map((row) => ({ ...row, id: String(row._id), _id: undefined })),
-    );
-  }),
-);
-api.delete(
-  "/workspaces/:workspaceId/invitations/:id",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    const workspaceId = param(request, "workspaceId");
-    const actorValue = await actor(request);
-    return sendData(
-      response,
-      await workspaceWrite(actorValue, workspaceId, "members", async () => {
-        const member = await authorize(actorValue, workspaceId, "members");
-        const invitation = await Invitation.findOne({
-          _id: param(request, "id"),
-          workspaceId,
-          acceptedAt: null,
-        }).lean();
-        if (!invitation)
-          throw new HttpError(404, "NOT_FOUND", "Invitation not found.");
-        if (invitation.role === "ADMIN" && member.role !== "OWNER")
-          throw new HttpError(
-            403,
-            "FORBIDDEN",
-            "Only the owner can revoke an administrator invitation.",
-          );
-        await Invitation.deleteOne({ _id: invitation._id, workspaceId });
-        await AuditEvent.create({
-          workspaceId,
-          actorId: actorValue.userId,
-          action: "invitation.revoked",
-          resourceId: String(invitation._id),
-          requestId: String(response.getHeader("X-Request-Id")),
-        });
-        return { deleted: true };
+      await updateUser(principal(request), {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.theme !== undefined ? { theme: input.theme } : {}),
+        ...(input.activeWorkspaceId !== undefined
+          ? { activeWorkspaceId: input.activeWorkspaceId }
+          : {}),
       }),
     );
   }),
 );
-api.delete(
-  "/workspaces/:workspaceId/recurring/:id",
+router.delete(
+  "/me",
+  authenticate,
   asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    const workspaceId = param(request, "workspaceId");
+    const result = await deleteUser(
+      principal(request),
+      z
+        .object({ confirmation: z.literal("DELETE MY ACCOUNT") })
+        .strict()
+        .parse(request.body).confirmation,
+      requestId(response),
+    );
+    await RefreshSession.updateMany(
+      { userId: principal(request).userId },
+      { $set: { revokedAt: new Date() } },
+    );
+    return sendData(response, result);
+  }),
+);
+
+router.get(
+  "/workspaces",
+  authenticate,
+  asyncRoute(async (request, response) =>
+    sendData(response, await services.listWorkspaces(principal(request))),
+  ),
+);
+router.post(
+  "/workspaces",
+  authenticate,
+  asyncRoute(async (request, response) =>
+    sendData(
+      response,
+      await services.createWorkspace(
+        principal(request),
+        body(workspaceInput, request).name,
+        requestId(response),
+        idempotency(request),
+      ),
+      201,
+    ),
+  ),
+);
+
+router.get(
+  "/workspaces/:workspaceId/overview",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope);
+    return sendData(response, await services.overview(scope));
+  }),
+);
+router.get(
+  "/workspaces/:workspaceId/transactions",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope);
+    const query = z
+      .object({
+        limit: z.coerce.number().int().min(1).max(100).default(25),
+        cursor: z.string().optional(),
+        category: z.string().max(40).optional(),
+        search: z.string().trim().max(80).optional(),
+      })
+      .parse(request.query);
     return sendData(
       response,
-      await workspaceWrite(
-        await actor(request),
-        workspaceId,
-        "write",
-        async () => {
-          const result = await RecurringRule.deleteOne({
-            workspaceId,
-            _id: param(request, "id"),
-          });
-          if (!result.deletedCount)
-            throw new HttpError(404, "NOT_FOUND", "Recurring rule not found.");
-          return { deleted: true };
-        },
-      ),
+      await services.listTransactions(scope, {
+        limit: query.limit,
+        ...(query.cursor ? { cursor: query.cursor } : {}),
+        ...(query.category ? { category: query.category } : {}),
+        ...(query.search ? { search: query.search } : {}),
+      }),
     );
   }),
 );
-api.post(
-  "/workspaces/:workspaceId/reports",
+router.post(
+  "/workspaces/:workspaceId/transactions",
+  authenticate,
   asyncRoute(async (request, response) => {
-    mutationOrigin(request);
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "write");
     return sendData(
       response,
-      await createReport(
-        await actor(request),
-        param(request, "workspaceId"),
-        reportInput.parse(request.body),
-        String(response.getHeader("X-Request-Id")),
+      await services.createTransaction(
+        scope,
+        principal(request),
+        request.body,
+        requestId(response),
+        idempotency(request),
       ),
       201,
     );
   }),
 );
-api.get(
-  "/workspaces/:workspaceId/reports",
+router.patch(
+  "/workspaces/:workspaceId/transactions/:id",
+  authenticate,
   asyncRoute(async (request, response) => {
-    const workspaceId = param(request, "workspaceId");
-    await authorize(await actor(request), workspaceId, "owner");
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "write");
+    const input = transactionUpdate.parse(request.body);
     return sendData(
       response,
-      (
-        await SharedReport.find(
-          { workspaceId, expiresAt: { $gt: new Date() } },
-          { tokenHash: 0 },
-        )
-          .sort({ createdAt: -1 })
-          .limit(100)
-          .lean()
-      ).map((row) => ({ ...row, id: String(row._id), _id: undefined })),
+      await services.updateTransaction(
+        scope,
+        principal(request),
+        id(request),
+        input.version,
+        input.data,
+        requestId(response),
+      ),
     );
   }),
 );
-api.get(
-  "/reports/shared/:token",
+router.delete(
+  "/workspaces/:workspaceId/transactions/:id",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "write");
+    const version = z
+      .object({ version: z.coerce.number().int().positive() })
+      .parse(request.query).version;
+    return sendData(
+      response,
+      await services.deleteTransaction(
+        scope,
+        principal(request),
+        id(request),
+        version,
+        requestId(response),
+      ),
+    );
+  }),
+);
+
+router.get(
+  "/workspaces/:workspaceId/accounts",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope);
+    return sendData(response, await services.listAccounts(scope));
+  }),
+);
+router.post(
+  "/workspaces/:workspaceId/accounts",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "write");
+    return sendData(
+      response,
+      await services.createAccount(
+        scope,
+        principal(request),
+        request.body,
+        requestId(response),
+        idempotency(request),
+      ),
+      201,
+    );
+  }),
+);
+router.delete(
+  "/workspaces/:workspaceId/accounts/:id",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "write");
+    return sendData(
+      response,
+      await services.deleteAccount(
+        scope,
+        principal(request),
+        id(request),
+        requestId(response),
+      ),
+    );
+  }),
+);
+
+router.get(
+  "/workspaces/:workspaceId/budgets",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope);
+    return sendData(response, await services.listBudgets(scope));
+  }),
+);
+router.post(
+  "/workspaces/:workspaceId/budgets",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "write");
+    return sendData(
+      response,
+      await services.saveBudget(
+        scope,
+        principal(request),
+        request.body,
+        requestId(response),
+        idempotency(request),
+      ),
+      201,
+    );
+  }),
+);
+router.delete(
+  "/workspaces/:workspaceId/budgets/:id",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "write");
+    return sendData(
+      response,
+      await services.deleteBudget(
+        scope,
+        principal(request),
+        id(request),
+        requestId(response),
+      ),
+    );
+  }),
+);
+
+router.get(
+  "/workspaces/:workspaceId/goals",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope);
+    return sendData(response, await services.listGoals(scope));
+  }),
+);
+router.post(
+  "/workspaces/:workspaceId/goals",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "write");
+    return sendData(
+      response,
+      await services.createGoal(
+        scope,
+        principal(request),
+        request.body,
+        requestId(response),
+        idempotency(request),
+      ),
+      201,
+    );
+  }),
+);
+router.post(
+  "/workspaces/:workspaceId/goals/:id/contributions",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "write");
+    const amount = z
+      .object({ amount: z.number().int().positive() })
+      .parse(request.body).amount;
+    return sendData(
+      response,
+      await services.contributeGoal(
+        scope,
+        principal(request),
+        id(request),
+        amount,
+        requestId(response),
+        idempotency(request),
+      ),
+    );
+  }),
+);
+
+router.get(
+  "/workspaces/:workspaceId/recurring",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope);
+    return sendData(response, await services.listRecurring(scope));
+  }),
+);
+router.post(
+  "/workspaces/:workspaceId/recurring",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "write");
+    return sendData(
+      response,
+      await services.createRecurring(
+        scope,
+        principal(request),
+        request.body,
+        requestId(response),
+        idempotency(request),
+      ),
+      201,
+    );
+  }),
+);
+router.post(
+  "/workspaces/:workspaceId/recurring/:id/record",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "write");
+    return sendData(
+      response,
+      await services.recordRecurring(
+        scope,
+        principal(request),
+        id(request),
+        requestId(response),
+        idempotency(request),
+      ),
+    );
+  }),
+);
+
+router.get(
+  "/workspaces/:workspaceId/insights",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope);
+    return sendData(response, await services.workspaceInsights(scope));
+  }),
+);
+router.get(
+  "/workspaces/:workspaceId/export",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "owner");
+    return sendData(
+      response,
+      await services.exportWorkspace(
+        scope,
+        principal(request),
+        requestId(response),
+      ),
+    );
+  }),
+);
+router.delete(
+  "/workspaces/:workspaceId",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "owner");
+    const confirmation = z
+      .object({ confirmation: z.string().max(120) })
+      .strict()
+      .parse(request.body).confirmation;
+    return sendData(
+      response,
+      await services.deleteWorkspace(
+        scope,
+        principal(request),
+        confirmation,
+        requestId(response),
+      ),
+    );
+  }),
+);
+
+router.get(
+  "/workspaces/:workspaceId/members",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope);
+    return sendData(response, await services.listMembers(scope));
+  }),
+);
+router.post(
+  "/workspaces/:workspaceId/members/invite",
+  authenticate,
+  asyncRoute(async (request, response) => {
+    const scope = workspaceId(request);
+    await requireMembership(request, scope, "owner");
+    const input = z
+      .object({ email: z.string().email(), role: z.enum(["EDITOR", "VIEWER"]) })
+      .strict()
+      .parse(request.body);
+    return sendData(
+      response,
+      await services.inviteMember(
+        scope,
+        principal(request),
+        input,
+        requestId(response),
+        idempotency(request),
+      ),
+      201,
+    );
+  }),
+);
+router.post(
+  "/invitations/accept",
+  authenticate,
   asyncRoute(async (request, response) => {
     const token = z
-      .string()
-      .regex(/^[A-Za-z0-9_-]{43}$/)
-      .parse(param(request, "token"));
-    const report = await SharedReport.findOne(
-      { tokenHash: digest(token), expiresAt: { $gt: new Date() } },
-      {
-        start: 1,
-        end: 1,
-        income: 1,
-        expenses: 1,
-        saved: 1,
-        expiresAt: 1,
-        _id: 0,
-      },
-    ).lean();
-    if (!report)
-      throw new HttpError(
-        404,
-        "NOT_FOUND",
-        "This report has expired or was removed.",
-      );
-    return sendData(response, report);
-  }),
-);
-api.delete(
-  "/workspaces/:workspaceId/reports/:id",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    const workspaceId = param(request, "workspaceId");
-    return sendData(
-      response,
-      await workspaceWrite(
-        await actor(request),
-        workspaceId,
-        "owner",
-        async () => {
-          await SharedReport.deleteOne({
-            workspaceId,
-            _id: param(request, "id"),
-          });
-          return { deleted: true };
-        },
-      ),
-    );
-  }),
-);
-api.get(
-  "/workspaces/:workspaceId/overview",
-  asyncRoute(async (request, response) =>
-    sendData(
-      response,
-      await overview(await actor(request), param(request, "workspaceId")),
-    ),
-  ),
-);
-api.get(
-  "/workspaces/:workspaceId/transactions",
-  asyncRoute(async (request, response) => {
-    const input = querySchema.parse(request.query);
-    return sendData(
-      response,
-      await entries(await actor(request), param(request, "workspaceId"), input),
-    );
-  }),
-);
-api.post(
-  "/workspaces/:workspaceId/commands",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    return sendData(
-      response,
-      await executeCommand(
-        await actor(request),
-        param(request, "workspaceId"),
-        key(request),
-        commandSchema.parse(request.body),
-        String(response.getHeader("X-Request-Id")),
-      ),
-    );
-  }),
-);
-api.post(
-  "/workspaces/:workspaceId/members",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    const input = invitationInput.parse(request.body);
-    return sendData(
-      response,
-      await inviteMember(
-        await actor(request),
-        param(request, "workspaceId"),
-        input.email,
-        input.role,
-        String(response.getHeader("X-Request-Id")),
-        key(request),
-      ),
-      201,
-    );
-  }),
-);
-api.patch(
-  "/workspaces/:workspaceId/members/:userId",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    const workspaceId = param(request, "workspaceId");
-    const userId = param(request, "userId");
-    const input = roleInput.parse({ ...request.body, userId });
-    const principalValue = await actor(request);
-    return sendData(
-      response,
-      await workspaceWrite(principalValue, workspaceId, "owner", async () => {
-        const target = await Membership.findOne({
-          workspaceId,
-          userId: input.userId,
-        }).lean();
-        if (!target) throw new HttpError(404, "NOT_FOUND", "Member not found.");
-        if (target.role === "OWNER")
-          throw new HttpError(
-            409,
-            "CONFLICT",
-            "The workspace owner cannot be demoted.",
-          );
-        await Membership.updateOne(
-          { workspaceId, userId: input.userId },
-          { role: input.role },
-        );
-        await Invitation.deleteMany({
-          workspaceId,
-          inviterId: input.userId,
-          acceptedAt: null,
-        });
-        await AuditEvent.create({
-          _id: randomUUID(),
-          workspaceId,
-          actorId: principalValue.userId,
-          action: "member.role_changed",
-          resourceId: input.userId,
-          requestId: String(response.getHeader("X-Request-Id")),
-        });
-        return { updated: true };
-      }),
-    );
-  }),
-);
-api.delete(
-  "/workspaces/:workspaceId/members/:userId",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    return sendData(
-      response,
-      await removeMember(
-        await actor(request),
-        param(request, "workspaceId"),
-        param(request, "userId"),
-        String(response.getHeader("X-Request-Id")),
-      ),
-    );
-  }),
-);
-api.get(
-  "/workspaces/:workspaceId/audit",
-  asyncRoute(async (request, response) => {
-    const workspaceId = param(request, "workspaceId");
-    await authorize(await actor(request), workspaceId, "members");
-    await requireWorkspaceFeature(workspaceId, "audit");
-    const rows = await AuditEvent.find({ workspaceId })
-      .sort({ createdAt: -1, _id: -1 })
-      .limit(100)
-      .lean();
-    return sendData(response, rows);
-  }),
-);
-api.get(
-  "/workspaces/:workspaceId/export",
-  asyncRoute(async (request, response) => {
-    const principalValue = await actor(request);
-    const workspaceId = param(request, "workspaceId");
-    await authorize(principalValue, workspaceId, "owner");
-    return sendData(
-      response,
-      await exportWorkspace(
-        principalValue,
-        workspaceId,
-        String(response.getHeader("X-Request-Id")),
-      ),
-    );
-  }),
-);
-api.delete(
-  "/workspaces/:workspaceId",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    const principalValue = await actor(request);
-    if (!principalValue.fresh)
-      throw new HttpError(
-        403,
-        "FORBIDDEN",
-        "Sign in again before deleting a workspace.",
-      );
-    const workspaceId = param(request, "workspaceId");
-    await authorize(principalValue, workspaceId, "owner");
-    const input = z
-      .object({ confirmation: z.string().max(100) })
-      .strict()
-      .parse(request.body);
-    return sendData(
-      response,
-      await deleteWorkspace(principalValue, workspaceId, input.confirmation),
-    );
-  }),
-);
-
-api.post(
-  "/invitations/accept",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    const input = z
       .object({ token: z.string().min(32).max(128) })
       .strict()
-      .parse(request.body);
+      .parse(request.body).token;
     return sendData(
       response,
-      await acceptInvitation(
-        await actor(request),
-        input.token,
-        String(response.getHeader("X-Request-Id")),
+      await services.acceptInvite(
+        principal(request),
+        token,
+        requestId(response),
       ),
-    );
-  }),
-);
-
-api.get(
-  "/me",
-  asyncRoute(async (request, response) => {
-    const principalValue = await actor(request);
-    const users = getAuth();
-    const session = await users.api.getSession({
-      headers: new Headers(request.headers as Record<string, string>),
-    });
-    const memberships = await Membership.find({
-      userId: principalValue.userId,
-    }).lean();
-    const workspaces = await Workspace.find({
-      _id: { $in: memberships.map((entry) => entry.workspaceId) },
-    }).lean();
-    const byId = new Map(
-      workspaces.map((workspace) => [String(workspace._id), workspace]),
-    );
-    return sendData(response, {
-      format: "finsight-personal-data-v1",
-      exportedAt: new Date().toISOString(),
-      profile: session
-        ? {
-            id: session.user.id,
-            name: session.user.name,
-            email: session.user.email,
-            emailVerified: session.user.emailVerified,
-            createdAt: session.user.createdAt,
-            noticeVersion: session.user.noticeVersion,
-            noticeAcceptedAt: session.user.noticeAcceptedAt,
-          }
-        : null,
-      security: {
-        twoFactorEnabled: Boolean(session?.user.twoFactorEnabled),
-        devices: await getDb()
-          .collection("sessions")
-          .find(
-            { userId: principalValue.userId as never },
-            {
-              projection: {
-                _id: 0,
-                userAgent: 1,
-                ipAddress: 1,
-                createdAt: 1,
-                expiresAt: 1,
-              },
-            },
-          )
-          .toArray(),
-        passkeys: await getDb()
-          .collection("passkeys")
-          .find(
-            { userId: principalValue.userId as never },
-            { projection: { _id: 0, name: 1, createdAt: 1 } },
-          )
-          .toArray(),
-      },
-      preferences: await preferences(principalValue),
-      memberships: memberships.map((entry) => ({
-        ...entry,
-        workspace: byId.get(entry.workspaceId),
-      })),
-      note: "Financial data is exported separately by workspace owners. Authentication secrets are excluded.",
-    });
-  }),
-);
-api.delete(
-  "/me",
-  asyncRoute(async (request, response) => {
-    mutationOrigin(request);
-    const input = z
-      .object({ confirmation: z.literal("DELETE MY ACCOUNT") })
-      .strict()
-      .parse(request.body);
-    return sendData(
-      response,
-      await deleteAccount(await actor(request), input.confirmation),
     );
   }),
 );
 
 export function registerRoutes(app: import("express").Express) {
-  app.use(
-    "/api/v1",
-    asyncRoute(async (request, response, next) => {
-      if (request.path === "/") return next();
-      const identifier = request.path.startsWith("/reports/shared/")
-        ? `report:${request.ip ?? "unknown"}`
-        : `api:${(await actor(request)).userId}`;
-      const limit = await consumeLimit(identifier, { window: 60, max: 120 });
-      if (!limit.allowed) {
-        response.setHeader("Retry-After", String(limit.retryAfter));
-        throw new HttpError(
-          429,
-          "RATE_LIMITED",
-          "Too many requests. Try again shortly.",
-        );
-      }
-      next();
-    }),
-  );
-  app.use("/api/v1", api);
-  app.use(
-    "/api/identity",
-    asyncRoute(async (request, response) => {
-      const body = ["GET", "HEAD"].includes(request.method)
-        ? undefined
-        : JSON.stringify(request.body ?? {});
-      const headers = new Headers(request.headers as Record<string, string>);
-      const result = await getAuth().handler(
-        new Request(
-          `${process.env.API_ORIGIN ?? "http://localhost:4000"}${request.originalUrl}`,
-          { method: request.method, headers, body },
-        ),
-      );
-      response.status(result.status);
-      result.headers.forEach((value, header) => {
-        if (header !== "set-cookie") response.setHeader(header, value);
-      });
-      const cookies = result.headers.getSetCookie();
-      if (cookies.length) response.setHeader("set-cookie", cookies);
-      response.send(Buffer.from(await result.arrayBuffer()));
-    }),
-  );
+  app.use("/api", router);
 }

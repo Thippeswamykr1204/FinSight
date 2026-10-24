@@ -1,216 +1,144 @@
-import { mongodbAdapter } from "better-auth/adapters/mongodb";
-import { betterAuth, APIError } from "better-auth";
-import { twoFactor, magicLink } from "better-auth/plugins";
-import { passkey } from "@better-auth/passkey";
 import { randomUUID } from "node:crypto";
-import mongoose from "mongoose";
-import type { MongoClient } from "mongodb";
-import { hash, verify, argon2id } from "argon2";
-import { verifyPassword } from "better-auth/crypto";
-import { getDb } from "./mongo";
-import { loadConfig } from "./config";
-import { queueEmail } from "./email";
-import { consumeLimit } from "./redis";
-import { getOAuthState } from "better-auth/api";
+import type { Request, Response } from "express";
+import { HttpError } from "./http.js";
+import { RefreshSession } from "./models.js";
+import {
+  clearAuthCookies,
+  hashRefreshToken,
+  issueAccessToken,
+  newOpaqueToken,
+  refreshTokenFrom,
+  setAuthCookies,
+} from "./security.js";
+import type { Principal } from "./middleware.js";
+import { authenticateUser, createUser } from "./services.js";
 
-const privacyNoticeVersion = "2026-10-07";
-let instance: ReturnType<typeof createAuth> | undefined;
-
-function createAuth() {
-  const config = loadConfig();
-  const client = mongoose.connection.getClient() as unknown as MongoClient;
-  const database = getDb();
-  return betterAuth({
-    appName: "FinSight",
-    baseURL: config.WEB_ORIGIN,
-    basePath: "/api/identity",
-    secret: config.BETTER_AUTH_SECRET,
-    trustedOrigins: [config.WEB_ORIGIN, config.API_ORIGIN],
-    database: mongodbAdapter(database, {
-      client,
-      transaction: true,
-      usePlural: true,
-    }),
-    advanced: {
-      database: { generateId: () => randomUUID() },
-      cookiePrefix: "finsight-v3",
-      ipAddress: { ipAddressHeaders: ["x-finsight-client-ip"] },
-      useSecureCookies: new URL(config.WEB_ORIGIN).protocol === "https:",
-      defaultCookieAttributes: {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: new URL(config.WEB_ORIGIN).protocol === "https:",
-      },
-    },
-    session: {
-      expiresIn: 60 * 60 * 24 * 7,
-      updateAge: 60 * 60,
-      freshAge: 60 * 10,
-      cookieCache: { enabled: false },
-    },
-    emailAndPassword: {
-      enabled: true,
-      minPasswordLength: 12,
-      maxPasswordLength: 128,
-      requireEmailVerification: true,
-      autoSignIn: false,
-      revokeSessionsOnPasswordReset: true,
-      password: {
-        hash: (password) =>
-          hash(password, {
-            type: argon2id,
-            memoryCost: 65536,
-            timeCost: 3,
-            parallelism: 1,
-          }),
-        verify: ({ hash: encoded, password }) =>
-          encoded.startsWith("$argon2id$")
-            ? verify(encoded, password)
-            : verifyPassword({ hash: encoded, password }),
-      },
-      sendResetPassword: async ({ user, url }) => {
-        await queueEmail(
-          user.email,
-          "Reset your FinSight password",
-          `Use this single-use link to choose a new password:\n${url}\n\nIf you did not request this, ignore this email.`,
-        );
-      },
-    },
-    emailVerification: {
-      sendOnSignUp: true,
-      sendOnSignIn: true,
-      autoSignInAfterVerification: false,
-      expiresIn: 1800,
-      sendVerificationEmail: async ({ user, url }) => {
-        await queueEmail(
-          user.email,
-          "Verify your FinSight email",
-          `Confirm your email address to open your workspace:\n${url}\n\nThis link expires in 30 minutes.`,
-        );
-      },
-    },
-    account: { encryptOAuthTokens: true, accountLinking: { enabled: false } },
-    socialProviders: {
-      ...(config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET
-        ? {
-            google: {
-              clientId: config.GOOGLE_CLIENT_ID,
-              clientSecret: config.GOOGLE_CLIENT_SECRET,
-              requireEmailVerification: true,
-              disableImplicitSignUp: true,
-            },
-          }
-        : {}),
-    },
-    rateLimit: {
-      enabled: true,
-      window: 60,
-      max: 100,
-      customStorage: { consume: consumeLimit },
-      customRules: {
-        "/sign-in/email": { window: 60, max: 10 },
-        "/sign-up/email": { window: 60, max: 5 },
-        "/request-password-reset": { window: 60, max: 5 },
-      },
-    },
-    user: {
-      additionalFields: {
-        noticeAccepted: {
-          type: "boolean",
-          required: true,
-          defaultValue: false,
-        },
-        noticeVersion: {
-          type: "string",
-          input: false,
-          defaultValue: privacyNoticeVersion,
-        },
-        noticeAcceptedAt: { type: "date", input: false, required: false },
-      },
-    },
-    verification: { storeIdentifier: "hashed" },
-    plugins: [
-      twoFactor({ issuer: "FinSight" }),
-      magicLink({
-        storeToken: "hashed",
-        expiresIn: 600,
-        disableSignUp: true,
-        sendMagicLink: async ({ email, url }) => {
-          await queueEmail(
-            email,
-            "Your FinSight sign-in link",
-            `Sign in securely:\n${url}\n\nThis link can be used once and expires in 10 minutes. If you enabled an authenticator, use password or passkey sign-in instead.`,
-          );
-        },
-      }),
-      passkey({
-        rpID: new URL(config.WEB_ORIGIN).hostname,
-        rpName: "FinSight",
-        origin: config.WEB_ORIGIN,
-        authenticatorSelection: { userVerification: "required" },
-      }),
-    ],
-    databaseHooks: {
-      user: {
-        create: {
-          before: async (user) => {
-            const oauthState = await getOAuthState();
-            const accepted =
-              ("noticeAccepted" in user && user.noticeAccepted === true) ||
-              oauthState?.noticeAccepted === true;
-            if (!accepted) {
-              throw new APIError("BAD_REQUEST", {
-                message:
-                  "Read and accept the privacy notice and terms before creating an account.",
-              });
-            }
-            return {
-              data: {
-                ...user,
-                noticeAccepted: true,
-                noticeVersion: privacyNoticeVersion,
-                noticeAcceptedAt: new Date(),
-              },
-            };
-          },
-        },
-      },
-      session: {
-        create: {
-          before: async (session, context) => {
-            const user = await database
-              .collection("users")
-              .findOne(
-                { _id: session.userId as never },
-                { projection: { twoFactorEnabled: 1 } },
-              );
-            const allowed = [
-              "/sign-in/email",
-              "/two-factor/verify-totp",
-              "/two-factor/verify-backup-code",
-              "/passkey/verify-authentication",
-              "/two-factor/enable",
-              "/two-factor/disable",
-              "/change-password",
-            ];
-            if (
-              user?.twoFactorEnabled &&
-              !allowed.includes(context?.path ?? "")
-            )
-              throw new APIError("FORBIDDEN", {
-                message:
-                  "Use your password and authenticator, or a registered passkey, to sign in.",
-              });
-            return { data: session };
-          },
-        },
-      },
-    },
+export async function establishSession(
+  user: { id: string; email: string; name: string },
+  request: Request,
+  response: Response,
+) {
+  const refreshToken = newOpaqueToken();
+  const sessionId = randomUUID();
+  const familyId = randomUUID();
+  await RefreshSession.create({
+    _id: sessionId,
+    userId: user.id,
+    familyId,
+    tokenHash: hashRefreshToken(refreshToken),
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    userAgent: request.header("user-agent")?.slice(0, 300) ?? "",
   });
+  setAuthCookies(
+    response,
+    await issueAccessToken(user.id, sessionId),
+    refreshToken,
+  );
+  return { user: { id: user.id, email: user.email, name: user.name } };
 }
 
-export function getAuth() {
-  return (instance ??= createAuth());
+export async function register(
+  input: {
+    name: string;
+    email: string;
+    password: string;
+    privacyAccepted: boolean;
+  },
+  requestId: string,
+  request: Request,
+  response: Response,
+) {
+  const user = await createUser(input, requestId);
+  return establishSession(user, request, response);
 }
 
-export type Auth = ReturnType<typeof getAuth>;
+export async function login(
+  email: string,
+  password: string,
+  request: Request,
+  response: Response,
+) {
+  const user = await authenticateUser(email, password);
+  return establishSession(user, request, response);
+}
+
+export async function rotate(request: Request, response: Response) {
+  const raw = refreshTokenFrom(request);
+  if (!raw)
+    throw new HttpError(
+      401,
+      "SESSION_EXPIRED",
+      "Your session has expired. Sign in again.",
+    );
+  const existing = await RefreshSession.findOne({
+    tokenHash: hashRefreshToken(raw),
+  });
+  if (!existing)
+    throw new HttpError(
+      401,
+      "SESSION_EXPIRED",
+      "Your session has expired. Sign in again.",
+    );
+  if (existing.revokedAt) {
+    await RefreshSession.updateMany(
+      { familyId: existing.familyId, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
+    clearAuthCookies(response);
+    throw new HttpError(
+      401,
+      "SESSION_REUSE",
+      "This session was revoked. Sign in again.",
+    );
+  }
+  if (existing.expiresAt <= new Date()) {
+    clearAuthCookies(response);
+    throw new HttpError(
+      401,
+      "SESSION_EXPIRED",
+      "Your session has expired. Sign in again.",
+    );
+  }
+  const nextToken = newOpaqueToken();
+  const nextId = randomUUID();
+  existing.revokedAt = new Date();
+  existing.replacedBy = nextId;
+  await existing.save();
+  await RefreshSession.create({
+    _id: nextId,
+    userId: existing.userId,
+    familyId: existing.familyId,
+    tokenHash: hashRefreshToken(nextToken),
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    userAgent: request.header("user-agent")?.slice(0, 300) ?? "",
+  });
+  const user = await authenticateUserById(existing.userId);
+  setAuthCookies(response, await issueAccessToken(user.id, nextId), nextToken);
+  return { user };
+}
+
+async function authenticateUserById(id: string) {
+  const { User } = await import("./models.js");
+  const { decryptField } = await import("./security.js");
+  const user = await User.findOne({ _id: id, deletedAt: null }).lean();
+  if (!user)
+    throw new HttpError(
+      401,
+      "SESSION_EXPIRED",
+      "Your account is no longer available.",
+    );
+  return {
+    id: String(user._id),
+    email: decryptField(user.emailCiphertext),
+    name: user.name,
+  };
+}
+
+export async function logout(actor: Principal, response: Response) {
+  await RefreshSession.updateOne(
+    { _id: actor.sessionId, userId: actor.userId, revokedAt: null },
+    { $set: { revokedAt: new Date() } },
+  );
+  clearAuthCookies(response);
+  return { loggedOut: true };
+}

@@ -1,18 +1,15 @@
 {
   "name": "@finsight/api",
+  "version": "4.0.0",
   "private": true,
-  "version": "3.0.0",
-  "description": "FinSight production Express API and BullMQ workers.",
+  "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --config vitest.config.mts",
-    "test:coverage": "vitest run --config vitest.config.mts --coverage",
-    "test:integration": "vitest run --config vitest.integration.config.mts"
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@finsight/shared": "3.0.0"
+    "@finsight/shared": "4.0.0"
   }
 }

@@ -1,74 +1,44 @@
-# Authenticated API v1
+# API surface
 
-The current API is session-authenticated; public API keys are not implemented yet. The web client uses same-origin cookies and sends JSON. All responses are `Cache-Control: no-store` and include `X-Request-Id`.
+All JSON responses use `{ "data": ... }` on success and `{ "error": { "code", "message", "requestId" } }` on failure. Browser mutations require the CSRF header and write endpoints accept `Idempotency-Key`.
 
-Success envelope: `data` plus `requestId`. Error envelope: `error.code`, `error.message`, and `error.requestId`. Codes distinguish unauthenticated (401), forbidden/origin rejection (403), inaccessible workspace (404), stale/idempotency conflict (409), validation/limits (422), throttling (429), and unavailable deployment (503).
+## Authentication
 
-## Routes
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/refresh`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
 
-| Method | Route                                  | Role / behavior                                                                                            |
-| ------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/v1/workspaces`                   | Lists only the authenticated user’s memberships                                                            |
-| POST   | `/api/v1/workspaces`                   | Creates an empty workspace and its owner membership                                                        |
-| GET    | `/api/v1/workspaces/{id}/overview`     | Member; DB-backed balances, monthly totals, budgets, goals and members                                     |
-| GET    | `/api/v1/workspaces/{id}/transactions` | Member; `limit` up to 100, `search`, `category`, opaque `cursor`                                           |
-| POST   | `/api/v1/workspaces/{id}/commands`     | Editor/admin/owner; idempotent finance mutation                                                            |
-| POST   | `/api/v1/workspaces/{id}/members`      | Admin/owner; queue an invitation; only owner can grant admin                                               |
-| PATCH  | `/api/v1/workspaces/{id}/members/{userId}` | Owner; change a non-owner member’s role                                                                |
-| DELETE | `/api/v1/workspaces/{id}/members/{userId}` | Admin/owner subject to target-role checks; owners cannot be removed                                    |
-| POST   | `/api/v1/invitations/accept`           | Verified invited email; single-use, unexpired token                                                        |
-| GET    | `/api/v1/workspaces/{id}/audit`        | Admin/owner with Business entitlement; latest 100 audit events                                                                       |
-| GET    | `/api/v1/workspaces/{id}/export`       | Owner; consistent JSON snapshot plus audit event                                                           |
-| DELETE | `/api/v1/workspaces/{id}`              | Owner + sign-in within 10 minutes; confirmation `DELETE {exact name}`; permanent ledger cascade            |
-| GET    | `/api/v1/me`                           | Personal profile, recorded notice acceptance, memberships and security metadata; no authentication secrets |
-| DELETE | `/api/v1/me`                           | Recent sign-in; confirmation `DELETE MY ACCOUNT`; rejects while the user owns workspaces                   |
+## Personal data
 
-Identity endpoints are handled by Better Auth under `/api/identity`. Signup requires `noticeAccepted: true`; the current policy version/time are server-assigned, not client-controlled. Earlier users have no fabricated consent record. External OAuth creation without prior acceptance is refused.
+- `PATCH /api/me`
+- `GET /api/me/export`
+- `DELETE /api/me`
 
-## Unified state, recurring rules and reports
+## Workspaces
 
-`GET /api/v1/workspaces/{id}/state` returns the persisted finance state and server
-entitlements. `GET/PATCH /api/v1/preferences` reads/validates user preferences.
-Recurring rules use `GET/POST /api/v1/workspaces/{id}/recurring` and
-`PATCH/DELETE /api/v1/workspaces/{id}/recurring/{ruleId}`; creating rules requires
-write access, Pro/Business and an idempotency key. Daily/weekly/monthly/yearly
-execution is transactional and keyed by rule/date.
+- `GET /api/workspaces`
+- `POST /api/workspaces`
+- `GET /api/workspaces/:workspaceId/overview`
+- `GET /api/workspaces/:workspaceId/export`
+- `DELETE /api/workspaces/:workspaceId`
+- `GET /api/workspaces/:workspaceId/members`
+- `POST /api/workspaces/:workspaceId/members/invite`
+- `POST /api/invitations/accept`
 
-Reports use `GET/POST /api/v1/workspaces/{id}/reports` and owner
-`DELETE /api/v1/workspaces/{id}/reports/{reportId}`. Creation requires Pro/Business.
-Public `GET /api/v1/reports/shared/{token}` exposes only immutable summary totals
-until the seven-day expiry or revocation; it never exposes the underlying ledger.
+## Finance
 
-## Billing
+- `GET|POST /api/workspaces/:workspaceId/accounts`
+- `DELETE /api/workspaces/:workspaceId/accounts/:id`
+- `GET|POST /api/workspaces/:workspaceId/transactions`
+- `PATCH|DELETE /api/workspaces/:workspaceId/transactions/:id`
+- `GET|POST /api/workspaces/:workspaceId/budgets`
+- `DELETE /api/workspaces/:workspaceId/budgets/:id`
+- `GET|POST /api/workspaces/:workspaceId/goals`
+- `POST /api/workspaces/:workspaceId/goals/:id/contributions`
+- `GET|POST /api/workspaces/:workspaceId/recurring`
+- `POST /api/workspaces/:workspaceId/recurring/:id/record`
+- `GET /api/workspaces/:workspaceId/insights`
 
-`GET /api/v1/billing` returns only the payer's profile, subscription/verified
-entitlement and invoice summaries. `PATCH /api/v1/billing/profile` validates an
-Indian billing address and optional GSTIN. `POST /api/v1/billing/checkout`,
-`/change` and `/cancel` require a recent sign-in and actor/payload-bound
-`Idempotency-Key`; checkout/change accept `{ plan: "pro" | "business" }`.
-`GET /api/v1/billing/checkout` resumes an unfinished checkout. `POST
-/api/v1/billing/refresh` reconciles provider state; `/verify` accepts the three
-Razorpay checkout fields without trusting browser ownership or payment status.
-`GET /api/v1/billing/invoices/{id}` returns an immutable payer-scoped invoice.
-
-Public `POST /api/v1/billing/webhook` accepts at most 256 KB of **raw JSON** and
-requires the exact-byte provider HMAC/event ID. Public `GET /api/v1/capabilities`
-reports configured Google/billing availability. Provider callbacks are separate
-from cookie/origin-gated user mutations. [BILLING](BILLING.md) documents GST,
-limits, durable reservations, cancellation and retained invoices.
-
-## Finance command contract
-
-See `apps/api/src/contracts.ts` for the runtime-validated discriminated union. Supported actions are `account.create`, `account.reminder`, `transaction.create`, `transaction.update`, `transaction.delete`, `transaction.import`, `budget.set`, `budget.delete`, `goal.create`, and `goal.contribute`. Manual account types include Savings, Current, Credit Card, UPI wallet, FD, RD, PPF, EPF, NPS, Gold, Mutual funds and Loan; legacy type labels remain valid. `dueDate` is nullable ISO; `account.reminder` updates/clears it using an account `id`.
-
-- New workspaces use integer INR paise, never floating-point rupee values (₹123.45 = 12345). Currency is explicit on workspace exports and CSV; imports reject non-INR. Stored dates are ISO YYYY-MM-DD, displayed as DD/MM/YYYY in Asia/Kolkata. Financial years run April–March.
-- Funded legacy USD workspaces preserve original minor units and are read-only (`409 LEGACY_CURRENCY_READ_ONLY` on finance commands). No exchange rate or silent reinterpretation is applied.
-- Dates use `YYYY-MM-DD`; budget periods use `YYYY-MM`.
-- Commands require an `Idempotency-Key` of 8–128 alphanumeric, hyphen or underscore characters. A random UUID is suitable.
-- Reuse the key when retrying an identical request. Changing the payload with the same key produces 409.
-- Transaction updates and deletes include `id` and `version` from the last read. Refresh after a stale-version error.
-- Request bodies are limited to 2 MB. Imports accept up to 1,000 validated rows and cannot attach another workspace’s account.
-- The API does not accept an actor/user ID to determine access; it resolves the authenticated principal from the server session.
-- POST/PATCH/DELETE require an Origin equal to the configured hosted origin. Provider callbacks are validated by Better Auth instead of this finance API gate.
-
-OpenAPI publication and scoped API-key authentication remain separate follow-up work; the current cookie contract should not be presented as a completed public developer platform.
+Transaction list pagination uses `limit`, `cursor`, `category`, and `search`. The cursor encodes the last `(date, id)` pair and must be treated as opaque by clients.

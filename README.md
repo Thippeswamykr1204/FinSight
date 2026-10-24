@@ -1,222 +1,162 @@
-<div align="center">
-  <h1>FinSight</h1>
-  <p><strong>Money, with perspective.</strong></p>
-  <p>An India-first personal finance workspace for accounts, spending, budgets and savings,<br />built on exact paise, Indian number formatting and an April financial year.</p>
-  <p>
-    <a href="https://github.com/Thippeswamykr1204/FinSight/actions/workflows/quality.yml"><img src="https://github.com/Thippeswamykr1204/FinSight/actions/workflows/quality.yml/badge.svg" alt="Quality workflow status" /></a>
-    <a href="https://github.com/Thippeswamykr1204/FinSight/actions/workflows/codeql.yml"><img src="https://github.com/Thippeswamykr1204/FinSight/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status" /></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-178457?style=flat-square" alt="MIT license" /></a>
-    <a href="package.json"><img src="https://img.shields.io/badge/Node.js-%E2%89%A522.12-417e38?style=flat-square" alt="Node.js 22.12 or newer" /></a>
-    <a href="package.json"><img src="https://img.shields.io/badge/Next.js-15-101b16?style=flat-square" alt="Next.js 15" /></a>
-    <a href="package.json"><img src="https://img.shields.io/badge/TypeScript-5-3178c6?style=flat-square" alt="TypeScript 5" /></a>
-  </p>
-</div>
+# FinSight
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/dashboard.png" alt="FinSight dashboard, light theme" /></td>
-    <td width="50%"><img src="docs/screenshots/dashboard-dark.png" alt="FinSight dashboard, dark theme" /></td>
-  </tr>
-</table>
+FinSight is a private, India-first personal finance workspace for recording accounts, money moves, budgets, goals, recurring records, and the signals that follow from them. It uses exact integer paise for money and starts every workspace empty.
 
-<!-- Live demo: add the public URL here once the API, worker, database, Redis and SMTP are deployed. -->
+The product is a real MERN application:
 
-## Overview
+- **MongoDB + Mongoose** for durable, indexed workspace data.
+- **Express + Node.js + TypeScript** for a stateless API.
+- **React + Vite + TypeScript** for the responsive web application.
+- **Vitest, Supertest, Playwright, ESLint, and TypeScript** for automated checks.
 
-FinSight brings manually maintained accounts, transactions, budgets and savings
-goals into a private, server-backed workspace for individuals and small groups
-that share records through role-controlled access. New workspaces start empty;
-every insight is calculated from the activity you record.
+## What is included
 
-India-first conventions live in the shared domain, not just in the display layer:
+- Password accounts with Argon2id hashing.
+- Fifteen-minute access tokens and rotating thirty-day refresh sessions in HTTP-only cookies.
+- Same-origin checks, double-submit CSRF protection, secure cookies, security headers, locked-down CORS, request IDs, rate limiting, and structured request logs.
+- AES-256-GCM field encryption for email addresses and invitation addresses.
+- Workspaces with owner, editor, and viewer access.
+- Accounts, transactions, CSV import, cursor-based transaction pagination, version-checked transaction edits, budgets, goals, contributions, recurring records, insights, calculators, exports, invitations, and destructive data-rights flows.
+- Light and dark themes, responsive navigation, keyboard-visible focus, reduced-motion support, route-level code splitting, skeleton states, and a recovery-only service worker that never caches API responses or financial pages.
 
-| Convention       | Implementation                                                                                 |
-| ---------------- | ---------------------------------------------------------------------------------------------- |
-| Exact money      | Integer paise throughout the ledger (₹123.45 is `12345`); decimal input is parsed with BigInt. |
-| Familiar numbers | INR with `en-IN` grouping (`₹1,00,000`); compact values use lakh (`L`) and crore (`Cr`).       |
-| Local dates      | ISO calendar dates in storage, `Asia/Kolkata` for scheduling, `DD/MM/YYYY` in the interface.   |
-| Financial year   | April 1 to March 31, with financial-year cash-flow summaries.                                  |
+## Local setup
 
-## Key capabilities
+Requirements: Node.js 22.12 or newer and npm. Docker is not required.
 
-- **Ledger:** accounts, transactions with CSV export and version-checked edits, monthly budgets,
-  savings goals, recurring records, and CSV/OFX statement import with duplicate detection.
-- **Insight:** cash-flow charts, category breakdowns, an explainable planning score,
-  3/6/12-month scenarios, and EMI, SIP and goal calculators that state their assumptions.
-- **Collaboration:** Owner, Admin, Editor and Viewer roles enforced by the API, expiring
-  single-use invitations, workspace switching, plan-based seat limits and an audit log.
-- **Account security:** verified email, Argon2id passwords, passkeys, TOTP with recovery codes,
-  magic links, device review with remote sign-out, and optional Google sign-in.
-- **Data rights:** personal and workspace JSON export, workspace and account deletion, and
-  operator privacy and grievance contacts.
-- **Billing (optional):** Razorpay subscriptions for Pro and Business, GST invoices, signed
-  webhooks and reconciliation. A deployment with no billing variables runs Free only.
-  See [billing](docs/BILLING.md).
-- **Experience:** responsive layout, command palette, light and dark themes, and an installable
-  PWA whose service worker caches recovery assets only, never financial pages or API responses.
+```sh
+npm ci
+npm run dev
+```
+
+Open `http://localhost:5173`. When `MONGODB_URI` is empty, the API starts a temporary single-node MongoDB replica set through `mongodb-memory-server`; this keeps local development lightweight and allows transaction tests without a local database installation. The first run can download a MongoDB binary. Local records are temporary.
+
+For a persistent local database, set `MONGODB_URI` in `.env` to a MongoDB connection string. Copy `.env.example` and generate secrets before using anything beyond local development:
+
+```sh
+cp .env.example .env
+openssl rand -base64 32
+openssl rand -hex 32
+```
+
+The first value is suitable for `JWT_SECRET`; the second is suitable for `FIELD_ENCRYPTION_KEY`.
+
+## Commands
+
+| Command             | Purpose                                                        |
+| ------------------- | -------------------------------------------------------------- |
+| `npm ci`            | Install the locked dependency graph.                           |
+| `npm run dev`       | Run the API and Vite web application together.                 |
+| `npm run build`     | Build the shared package, API, and web application.            |
+| `npm run typecheck` | Typecheck every TypeScript package.                            |
+| `npm run lint`      | Run ESLint with warnings treated as failures.                  |
+| `npm test -- --run` | Run unit and API integration tests.                            |
+| `npm run test:e2e`  | Run Playwright browser flows when both services are available. |
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    Browser[Browser / installed PWA] --> Web[Web · Next.js]
-    Web -->|Same-origin API and identity proxy| API[API · Express / Better Auth]
-    API --> Mongo[(MongoDB replica set)]
-    API -->|Shared rate limits| Redis[(Redis)]
-    Worker[Worker · BullMQ] -->|Read encrypted outbox / scheduled writes| Mongo
-    Worker -->|Queue jobs / heartbeat| Redis
-    Worker --> SMTP[SMTP · Mailpit locally]
+```text
+Browser / installed PWA
+        │ HTTPS, cookies, CSRF header
+        ▼
+React + Vite static site
+        │ JSON API
+        ▼
+Stateless Express API ─────── optional Redis-compatible rate-limit store
+        │
+        ▼
+MongoDB replica set / Atlas free cluster
 ```
 
-The web owns presentation and proxy routing. The API owns identity, authorization and
-persistence. The worker delivers outbox email, runs recurring records and reconciles
-billing. Shared code owns finance calculations and Zod contracts. Ledger writes combine
-replica-set transactions, workspace revisions, idempotency keys and audit events.
-Details are in [architecture](docs/ARCHITECTURE.md).
+The browser owns presentation and never receives database credentials. The API owns authentication, authorization, validation, money rules, idempotency, audit events, and persistence. The shared package owns pure financial calculations and runtime input schemas.
 
-| Location              | Responsibility                                                        |
-| --------------------- | --------------------------------------------------------------------- |
-| `apps/web/`           | Next.js routes, components, themes, PWA assets and the API proxy      |
-| `apps/api/`           | Express, Better Auth, Mongoose models, services, worker and API tests |
-| `packages/shared/`    | INR arithmetic, calendars, calculators, imports and shared contracts  |
-| `tests/` · `scripts/` | Unit and browser tests; environment, preflight, e2e and rekey scripts |
-| `docs/` · `ops/`      | Documentation; Caddy HTTPS proxy configuration                        |
+There is no in-process session state. Access tokens are verified on every request, refresh sessions are persisted and rotated, and workspace membership is resolved from MongoDB for every resource access. Write endpoints accept an `Idempotency-Key` and bind the stored response to the authenticated actor and request fingerprint.
 
-| Layer             | Technology                                                         |
-| ----------------- | ------------------------------------------------------------------ |
-| Web               | Next.js 15 (App Router), React 18, Tailwind CSS 4, Recharts        |
-| API               | Express 5, Zod, Better Auth with passkeys, Argon2                  |
-| Data and queues   | MongoDB 8 via Mongoose, Redis 7 via ioredis, BullMQ                |
-| Email and logging | Nodemailer, Pino                                                   |
-| Quality           | TypeScript 5, Vitest, Playwright, Testcontainers, ESLint, Prettier |
+The API uses bounded reads: transaction lists use a compound date/id cursor, dashboard queries use aggregation, list endpoints cap their result windows, and exports state when the transaction export cap is reached. Money is stored in integer minor units; no API accepts a floating-point currency amount as a persisted value.
 
-## Quick start
+## Environment variables
 
-Requirements: Node.js 22.12 or newer, npm, and Docker with Compose v2.
+See `.env.example` for the complete list.
 
-```sh
-git clone https://github.com/Thippeswamykr1204/FinSight.git
-cd FinSight
-npm ci
-npm run env:init                       # creates .env with unique local secrets
-docker compose up --build -d --wait    # web, API, worker, MongoDB, Redis, Mailpit
-```
+| Variable                | Required          | Purpose                                                                        |
+| ----------------------- | ----------------- | ------------------------------------------------------------------------------ |
+| `NODE_ENV`              | Public deployment | `production` enables strict secret and HTTPS checks.                           |
+| `WEB_ORIGIN`            | Public deployment | Exact HTTPS origin allowed by CORS and origin checks.                          |
+| `MONGODB_URI`           | Public deployment | Authenticated MongoDB connection string.                                       |
+| `JWT_SECRET`            | Public deployment | Signing key for short-lived access tokens.                                     |
+| `FIELD_ENCRYPTION_KEY`  | Public deployment | 32-byte hex key for AES-256-GCM fields.                                        |
+| `REDIS_URL`             | Optional          | Redis-compatible shared rate-limit store. Memory limiting is used when absent. |
+| `TRUST_PROXY`           | Optional          | Set to `true` only when the host's proxy chain is trusted.                     |
+| `COOKIE_DOMAIN`         | Optional          | Shared cookie domain when the web and API use sibling subdomains.              |
+| `PRIVACY_CONTACT_EMAIL` | Public deployment | Operator contact published in operational material.                            |
+| `VITE_API_URL`          | Web build         | Public API origin, for example `https://api.example.com`.                      |
 
-| Open                                                    | Purpose                                          |
-| ------------------------------------------------------- | ------------------------------------------------ |
-| [localhost:3000/sign-up](http://localhost:3000/sign-up) | Create an account and onboard an empty workspace |
-| [localhost:8025](http://localhost:8025)                 | Mailpit inbox for verification and reset emails  |
-| [localhost:4000/ready](http://localhost:4000/ready)     | API readiness (MongoDB and Redis)                |
+## Free deployment from dashboards
 
-Stop with `docker compose down`; `docker compose down -v` also erases local data.
+This application is designed for a no-Docker launch using a MongoDB Atlas Free cluster, a free static-site host, and a free Node web-service host. Free hosts sleep, have memory and bandwidth limits, and should be treated as a launch environment rather than an availability promise. Do not enable paid backup or add billing details while setting up a free-only deployment.
 
-To develop with live reload, stop the web and API containers and run them from source:
+### 1. Create MongoDB
 
-```sh
-docker compose stop web api
-npm run shared:build
-npm run dev:hosted
-```
+1. Create a MongoDB Atlas project and choose the **Free** cluster option.
+2. Create a database user with a long random password.
+3. Add the API host's outbound address to the network access list. For a first public test, use the narrowest range your host documents; do not leave broad access in place for a real launch.
+4. Create a database named `finsight` and copy the driver connection string.
 
-## Configuration
+### 2. Deploy the API
 
-`npm run env:init` creates a private `.env` from [`.env.example`](.env.example). The
-essentials for any deployment:
+Create a Node web service from the repository with these dashboard values:
 
-| Variable                                          | Purpose                                                      |
-| ------------------------------------------------- | ------------------------------------------------------------ |
-| `NODE_ENV`, `HOSTED_LOCAL`                        | `production` and `false` for any public deployment           |
-| `WEB_ORIGIN`, `API_ORIGIN`, `NEXT_PUBLIC_APP_URL` | Public HTTPS origins (the last is compiled in at build time) |
-| `API_URL`                                         | Where the web service reaches the API                        |
-| `MONGODB_URI`, `REDIS_URL`                        | Authenticated replica set; TLS Redis with `noeviction`       |
-| `BETTER_AUTH_SECRET`, `FIELD_ENCRYPTION_KEY`      | Generated secrets (see [key rotation](docs/KEY_ROTATION.md)) |
-| `SMTP_*`, `EMAIL_FROM`                            | Transactional email provider and verified sender             |
-| `PRIVACY_CONTACT_EMAIL`, `GRIEVANCE_OFFICER_NAME` | Real operator contacts, required to boot in production       |
-| `TRUSTED_PROXY`                                   | Explicit proxy address allowlist for client-IP rate limits   |
+- Build command: `npm ci && npm run build`
+- Start command: `npm run start --workspace @finsight/api`
+- Root directory: repository root
+- Health path: `/health`
 
-Google sign-in, Razorpay billing and Sentry are optional groups documented in
-`.env.example`. Validate any production environment before deploying:
+Set `NODE_ENV=production`, `WEB_ORIGIN` to the final static-site URL, `MONGODB_URI`, `JWT_SECRET`, `FIELD_ENCRYPTION_KEY`, and `PRIVACY_CONTACT_EMAIL`. The service must expose the host-provided `PORT`; the API reads `PORT` when `API_PORT` is not present.
 
-```sh
-npm run preflight -- --env-file path/to/production.env
-```
+After deployment, confirm `/health` returns `status: ok` and `/ready` returns `status: ready` before connecting the web site.
 
-## Quality
+### 3. Deploy the web application
 
-```sh
-npm run format:check
-npm run check          # lint, typecheck, coverage, API tests, integration tests, build
-E2E_PRODUCTION=1 npm run test:e2e   # browser flows; needs Docker, Chromium and a prior build
-```
+Create a static site from the same repository:
 
-CI runs formatting, lint, types, coverage thresholds, integration and browser tests, dependency
-audits, a container readiness smoke test, CodeQL, dependency review, secret scanning and
-container vulnerability scanning. Unit tests cover money, calendars, imports, planning,
-recurrence, billing, configuration, encryption and provider signatures; integration tests
-exercise real replica-set writes, tenant boundaries, quotas and deletion.
+- Build command: `npm ci && npm run build`
+- Publish directory: `apps/web/dist`
+- Environment variable: `VITE_API_URL` set to the API's HTTPS origin
 
-## Deployment
+Configure the host's rewrite rule so unknown paths serve `index.html`; React Router owns client-side routes. Set the API's `WEB_ORIGIN` again if the static host assigns a new URL.
 
-Deploy the web, API and worker as separate processes from one release. MongoDB must be a
-replica set; Redis backs rate limits, queues and worker heartbeats; a transactional SMTP
-provider is required for authentication email.
+### 4. Verify the free deployment
 
-| Target                 | Support in this repository                                           |
-| ---------------------- | -------------------------------------------------------------------- |
-| Render                 | `render.yaml` blueprint for web, API and worker                      |
-| Railway                | `railway.web.json`, `railway.api.json`, `railway.worker.json`        |
-| Docker Compose + Caddy | `compose.production.yaml` with hardened services and `ops/Caddyfile` |
-| Vercel (web only)      | `vercel.json`; API and worker still run on long-lived services       |
+1. Open the static site in a private browser window.
+2. Register a test account, accept the privacy notice, create a workspace, add an account, and record an income and expense.
+3. Confirm the dashboard balance, transaction list, budget progress, export download, and dark theme.
+4. Confirm the API rejects requests from a different browser origin and that the browser has no financial data in local storage.
+5. Keep a copy of the generated secrets outside the repository. Never paste them into an issue, screenshot, log, or commit.
 
-Start with the [deployment guide](docs/DEPLOYMENT.md), keep the [runbook](docs/RUNBOOK.md)
-for day-two operations, and complete the [launch checklist](docs/LAUNCH_CHECKLIST.md).
-Tagged releases (`vX.Y.Z`) publish container images with provenance and an SBOM.
+## Scaling path
 
-## Security and privacy
+The code path remains the same while capacity changes:
 
-- Argon2id passwords, server-verified sessions, role-scoped operations and fresh sign-in for
-  destructive actions.
-- AES-256-GCM, purpose-bound and rotatable keys protect email bodies, billing profiles and
-  invoice party snapshots.
-- Shared Redis rate limits, input validation, origin checks, HttpOnly and SameSite cookies, CSP,
-  frame denial and HSTS.
-- Financial data is excluded from service-worker caching; logs redact credentials; optional
-  Sentry capture excludes financial and request payloads.
-- DPDP-aware notice acceptance and data-rights flows support compliance. The deployment
-  operator owns the applicable legal and retention processes.
+1. Replace the free MongoDB deployment with a larger replica set and keep the same `MONGODB_URI` contract. Review the existing compound indexes against real query telemetry.
+2. Set `REDIS_URL` to a managed Redis-compatible store so rate limits are shared by every API instance.
+3. Run multiple stateless API instances behind an HTTPS load balancer. No session affinity is required.
+4. Move the static site to a CDN and keep `VITE_API_URL` pointed at the API hostname.
+5. Add a queue implementation behind the recurring/export interface for high-volume email, imports, and scheduled work. The current free deployment deliberately has no worker requirement.
+6. Move large exports to object storage with signed, short-lived download URLs. Keep the existing authorization and audit step in the API.
+7. Add read replicas or precomputed aggregates only after query telemetry shows the need. Keep dashboard calculations in aggregation pipelines rather than loading a workspace ledger into process memory.
+8. Partition operational concerns by workspace and retention policy, add centralized logs and metrics, and rehearse backup restoration before serving high-value data.
 
-Read the [security notes](docs/SECURITY.md) (including known limitations) and report
-vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+## Security and operations
 
-## Project status
+Read [the security notes](docs/SECURITY.md), [the deployment guide](docs/DEPLOYMENT.md), and [the key-rotation procedure](docs/KEY_ROTATION.md). The operator is responsible for HTTPS, secret custody, MongoDB network policy, backups, incident response, privacy contacts, retention rules, and the legal notices required by the regions served.
 
-FinSight is under active development. The Free plan works without payment credentials and is the
-recommended launch configuration. Razorpay billing and Google sign-in are implemented and covered by
-unit and integration tests, but have not yet been verified end to end against live provider
-accounts; the remaining checks are listed in the [launch checklist](docs/LAUNCH_CHECKLIST.md).
-No production deployment, uptime figure or compliance certification is claimed.
+## Decisions
 
-## Documentation
-
-| Document                                     | Covers                                               |
-| -------------------------------------------- | ---------------------------------------------------- |
-| [Architecture](docs/ARCHITECTURE.md)         | Service boundaries, persistence, worker duties       |
-| [API](docs/API.md)                           | Routes, roles, finance commands, billing contract    |
-| [India domain](docs/INDIA.md)                | Paise, INR formatting, IST, financial years, imports |
-| [Billing](docs/BILLING.md)                   | Plans, GST, Razorpay lifecycle, retention, Google    |
-| [Security](docs/SECURITY.md)                 | Controls, secrets, known limitations                 |
-| [Key rotation](docs/KEY_ROTATION.md)         | Encryption envelopes, retained keys, rekeying        |
-| [Deployment](docs/DEPLOYMENT.md)             | Topologies, hosting, HTTPS, proxy trust, backups     |
-| [Runbook](docs/RUNBOOK.md)                   | Alerts, rollback, restore, incident response         |
-| [Launch checklist](docs/LAUNCH_CHECKLIST.md) | Verified scope and operator-dependent checks         |
-| [Visual QA](docs/VISUAL_QA.md)               | Visual review guidance and screenshots               |
-| [Changelog](CHANGELOG.md)                    | Notable changes                                      |
-
-## Contributing
-
-Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, conventions and the
-checks a pull request must pass.
+- The product is India-first: INR, integer paise, `en-IN` formatting, ISO dates, and Asia/Kolkata display conventions.
+- Signup does not require SMTP. This keeps a free deployment usable without an outbound mail dependency; invitations are returned as one-time tokens for the operator to deliver through an approved channel.
+- Recurring records are user-triggered in the free deployment. Nothing silently writes to the ledger from an in-process timer.
+- Bank aggregation, payment billing, and investment advice are not claimed. The ledger is manually maintained and calculators are labeled as assumptions.
+- The service worker caches only recovery assets. Offline financial writes are not queued or presented as saved.
 
 ## License
 
-[MIT](LICENSE) · Copyright © 2026 Thippeswamy.
+MIT. See [LICENSE](LICENSE).

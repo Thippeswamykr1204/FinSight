@@ -1,15 +1,15 @@
 {
   "name": "@finsight/web",
+  "version": "4.0.0",
   "private": true,
-  "version": "3.0.0",
-  "description": "FinSight Next.js application.",
+  "type": "module",
   "scripts": {
-    "dev": "node --env-file-if-exists=../../.env ../../node_modules/next/dist/bin/next dev --turbopack",
-    "build": "next build",
-    "start": "next start",
-    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json"
+    "dev": "vite --config vite.config.ts",
+    "build": "vite build --config vite.config.ts",
+    "preview": "vite preview --config vite.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@finsight/shared": "3.0.0"
+    "@finsight/shared": "4.0.0"
   }
 }

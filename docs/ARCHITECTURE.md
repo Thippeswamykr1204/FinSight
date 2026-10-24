@@ -1,44 +1,44 @@
 # Architecture
 
+FinSight is a two-process MERN application with one shared TypeScript package.
+
 ```text
-Browser → apps/web (Next.js) → apps/api (Express) → MongoDB replica set
-                                               → Redis
-                                               → encrypted email outbox
-Worker (BullMQ) → SMTP
-               → scheduled recurring transactions / Razorpay reconciliation
+React/Vite static site ── HTTPS JSON ── Express API ── Mongoose ── MongoDB
+                                              │
+                                              └── optional Redis-compatible limiter
 ```
 
-`apps/web` owns presentation and proxies `/api/v1` and `/api/identity` to the API.
-It has no database credentials or database client. `apps/api` owns identity,
-workspace authorization and persistence. `packages/shared` owns the India finance
-domain and runtime schemas. npm workspaces use one root lockfile.
+## Boundaries
 
-Workspace-scoped models use string IDs, compound indexes, integer paise and ISO
-calendar dates. Writes use MongoDB replica-set transactions, a workspace revision
-lock, server-resolved membership, actor/payload-bound idempotency and audit events.
-Finance commands validate account ownership inside the transaction. Owner,
-admin, editor and viewer privileges are enforced by the API.
+- `apps/web` owns routing, presentation, accessibility, theme state, optimistic-safe UI states, and the PWA shell. It has no database or signing keys.
+- `apps/api` owns identity, cookies, CSRF, authorization, input validation, idempotency, transactions, audit events, aggregation, and data-rights operations.
+- `packages/shared` owns pure INR arithmetic, schemas, formatting, summaries, cash-flow helpers, and calculators.
 
-Better Auth uses MongoDB sessions, Argon2id password hashing, email verification,
-TOTP, passkeys and magic links. Redis stores atomic shared rate-limit counters;
-BullMQ schedules deliveries whose payloads contain only outbox IDs. Email bodies
-use AES-256-GCM with a separate rotatable key ring. Financial responses and HTML
-are not stored by the recovery-only service worker.
+## Persistence model
 
-The web and API have separate production images. The worker runs the API image
-with its worker entrypoint. `/health` is liveness; `/ready` checks dependencies.
-Local Compose includes a MongoDB replica set, Redis and Mailpit.
+Collections are keyed by UUID strings and every workspace-owned document carries `workspaceId`:
 
-Subscriptions belong to the payer; owned workspace permissions use that owner's
-verified paid period. Integer-paise prices/taxes and limits live in shared billing
-schemas. Durable actor/payload-bound operation reservations precede provider calls,
-which execute outside retryable Mongo transactions. Raw signed webhooks are mounted
-before JSON parsing. Captured payments create immutable encrypted invoice snapshots;
-canonical provider reads and account revisions protect against stale events.
-See [BILLING](BILLING.md) for the lifecycle and accounting contract.
+`users`, `refreshsessions`, `workspaces`, `memberships`, `accounts`, `transactions`, `budgets`, `goals`, `recurringrules`, `auditevents`, `idempotencyrecords`, and `invitations`.
 
-The worker records a hostname-bound heartbeat in Redis, runs recurrence and billing
-reconciliation independently, and drains active jobs before closing owned resources.
-Readiness checks probe MongoDB/Redis, while SMTP delivery is verified separately.
-Optional server monitoring excludes financial/request payloads. Production Compose
-uses managed stores; Render/Railway manifests share the same build and entrypoints.
+The main indexes follow actual request paths:
+
+- membership by `(workspaceId, userId)` and `(userId, createdAt, _id)`;
+- transactions by `(workspaceId, date, _id)`, `(workspaceId, category, date, _id)`, and `(workspaceId, accountId, date, _id)`;
+- budgets by `(workspaceId, category, month)` and `(workspaceId, month)`;
+- goals and recurring rules by workspace and next-use date;
+- refresh, idempotency, and invitation records by their lookup hash and TTL date.
+
+Transactions use integer paise, an ISO calendar date, and a version number. Updates include the expected version so concurrent edits fail closed instead of silently overwriting another change. MongoDB sessions protect multi-document workspace creation, recurring recording, and workspace deletion.
+
+## Request flow
+
+1. `helmet`, CORS, request IDs, cookies, JSON limits, CSRF, and rate limits run before routes.
+2. Authentication verifies the short-lived access token and checks the persisted refresh session is active.
+3. Every workspace route resolves membership from MongoDB. The client-supplied role is never trusted.
+4. Zod parses the request body, query, and path identifiers before a database filter is built.
+5. Mutating routes audit the actor and request ID. Retried writes can return the stored response for the same actor, scope, key, and payload fingerprint.
+6. The centralized error handler returns a stable error code and request ID without exposing stack traces or database details.
+
+## Free deployment behavior
+
+The default local limiter is in memory. Setting `REDIS_URL` selects the Redis-compatible implementation without changing route code. There is no worker, local file store, or in-process session registry. Recurring records are recorded by an authenticated user action; a queue can be added behind the same service boundary when a deployment can support it.

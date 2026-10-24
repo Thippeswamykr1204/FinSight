@@ -1,92 +1,273 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import mongoose from "mongoose";
 import {
-  financialYear,
+  Account as AccountContract,
+  accountInput,
+  budgetInput,
+  cashFlow,
+  categories,
+  goalInput,
   localDate,
-  periodTotals,
-  region,
-  emptyState,
-  stateSchema,
-  nextOccurrence,
-  preferencesInput,
   recurrenceInput,
-  reportInput,
+  summarize,
+  transactionInput,
+  type Transaction as TransactionContract,
 } from "@finsight/shared";
 import {
+  Account,
   AuditEvent,
   Budget,
-  FinancialAccount,
   Goal,
-  IdempotencyKey,
+  IdempotencyRecord,
   Invitation,
   Membership,
-  Transaction,
-  Workspace,
-  UserPreferences,
-  UserOperation,
   RecurringRule,
-  SharedReport,
-  BillingAccount,
-  BillingOperation,
-  BillingSubscription,
-  BillingInvoice,
-} from "./models";
-import { getDb } from "./mongo";
+  Transaction,
+  User,
+  Workspace,
+} from "./models.js";
+import { HttpError } from "./http.js";
+import type { Principal } from "./middleware.js";
 import {
-  atomic,
-  membership,
-  nativeOptions,
-  workspaceWrite,
-} from "./repositories/unit-of-work";
-import { queueEmail } from "./email";
-import { loadConfig } from "./config";
-import { fingerprint as importFingerprint } from "@finsight/shared";
-import { HttpError } from "./http";
-import type { FinanceCommand } from "./contracts";
-import type { Principal } from "./principal";
-import type { z } from "zod";
-import { model } from "mongoose";
-import { rateKey, redis } from "./redis";
-import {
-  userEntitlements,
-  workspaceEntitlements,
-  assertPlanWrite,
-  reserveTransactions,
-  requireWorkspaceFeature,
-} from "./billing";
+  decryptField,
+  digest,
+  encryptField,
+  hashPassword,
+  newOpaqueToken,
+  verifyPassword,
+} from "./security.js";
 
-export const digest = (value: unknown) =>
-  createHash("sha256").update(JSON.stringify(value)).digest("hex");
-export const serialize = (value: any): any =>
-  value == null
-    ? value
-    : {
-        ...value,
-        id: String(value._id ?? value.id),
-        _id: undefined,
-        __v: undefined,
-      };
+function serialize<T extends Record<string, unknown> | null>(value: T) {
+  if (!value) return null;
+  const { _id, ...rest } = value;
+  delete (rest as Record<string, unknown>).__v;
+  return { ...rest, id: String(_id) } as Omit<T, "_id" | "__v"> & {
+    id: string;
+  };
+}
 
-export async function authorize(
-  actor: Principal,
-  workspaceId: string,
-  permission: "read" | "write" | "members" | "owner" = "read",
+function fingerprint(value: unknown) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+async function idempotent<T>(
+  scope: string,
+  actorId: string,
+  key: string | undefined,
+  input: unknown,
+  work: () => Promise<T>,
 ) {
-  return membership(actor, workspaceId, permission);
+  if (!key) return work();
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(key))
+    throw new HttpError(
+      422,
+      "INVALID_IDEMPOTENCY_KEY",
+      "Use an Idempotency-Key between 8 and 128 characters.",
+    );
+  const hash = fingerprint(input);
+  const existing = await IdempotencyRecord.findOne({
+    scope,
+    actorId,
+    key,
+  }).lean();
+  if (existing) {
+    if (existing.fingerprint !== hash)
+      throw new HttpError(
+        409,
+        "IDEMPOTENCY_CONFLICT",
+        "This key was already used for another request.",
+      );
+    if (existing.state === "completed") return existing.response as T;
+    if (existing.expiresAt <= new Date()) {
+      await IdempotencyRecord.deleteOne({
+        _id: existing._id,
+        state: "pending",
+      });
+      return idempotent(scope, actorId, key, input, work);
+    }
+    throw new HttpError(
+      409,
+      "IDEMPOTENCY_IN_PROGRESS",
+      "That request is already being processed. Retry with the same key shortly.",
+    );
+  }
+  let reservation;
+  try {
+    reservation = await IdempotencyRecord.create({
+      scope,
+      actorId,
+      key,
+      fingerprint: hash,
+      state: "pending",
+      response: null,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000)
+      throw new HttpError(
+        409,
+        "IDEMPOTENCY_IN_PROGRESS",
+        "That request is already being processed. Retry with the same key shortly.",
+      );
+    throw error;
+  }
+  try {
+    const result = await work();
+    await IdempotencyRecord.updateOne(
+      { _id: reservation._id, fingerprint: hash, state: "pending" },
+      {
+        $set: {
+          state: "completed",
+          response: result,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      },
+    );
+    return result;
+  } catch (error) {
+    await IdempotencyRecord.deleteOne({
+      _id: reservation._id,
+      state: "pending",
+    });
+    throw error;
+  }
+}
+
+async function audit(
+  actorId: string,
+  action: string,
+  requestId: string,
+  workspaceId?: string,
+  resourceId?: string,
+) {
+  await AuditEvent.create({
+    actorId,
+    action,
+    requestId,
+    workspaceId: workspaceId ?? null,
+    resourceId: resourceId ?? null,
+  });
+}
+
+export async function createUser(
+  input: {
+    name: string;
+    email: string;
+    password: string;
+    privacyAccepted: boolean;
+  },
+  requestId: string,
+) {
+  if (!input.privacyAccepted)
+    throw new HttpError(
+      422,
+      "PRIVACY_REQUIRED",
+      "Accept the privacy notice before creating an account.",
+    );
+  const email = input.email.trim().toLowerCase();
+  const emailHash = digest(email);
+  if (await User.exists({ emailHash, deletedAt: null }))
+    throw new HttpError(
+      409,
+      "EMAIL_IN_USE",
+      "An account with that email already exists.",
+    );
+  if (input.password.length < 12 || input.password.length > 128)
+    throw new HttpError(
+      422,
+      "WEAK_PASSWORD",
+      "Use a password between 12 and 128 characters.",
+    );
+  const user = await User.create({
+    name: input.name.trim(),
+    emailHash,
+    emailCiphertext: encryptField(email),
+    passwordHash: await hashPassword(input.password),
+    privacyAcceptedAt: new Date(),
+  });
+  await audit(String(user._id), "account.created", requestId);
+  return { id: String(user._id), email, name: user.name };
+}
+
+export async function authenticateUser(emailInput: string, password: string) {
+  const email = emailInput.trim().toLowerCase();
+  const user = await User.findOne({
+    emailHash: digest(email),
+    deletedAt: null,
+  });
+  if (!user || !(await verifyPassword(user.passwordHash, password)))
+    throw new HttpError(
+      401,
+      "INVALID_CREDENTIALS",
+      "Email or password is incorrect.",
+    );
+  return {
+    id: String(user._id),
+    email: decryptField(user.emailCiphertext),
+    name: user.name,
+  };
+}
+
+export async function getUser(actor: Principal) {
+  const user = await User.findOne({
+    _id: actor.userId,
+    deletedAt: null,
+  }).lean();
+  if (!user) throw new HttpError(404, "USER_NOT_FOUND", "Account not found.");
+  return {
+    id: String(user._id),
+    email: decryptField(user.emailCiphertext),
+    name: user.name,
+    theme: user.theme,
+    activeWorkspaceId: user.activeWorkspaceId,
+  };
+}
+
+export async function updateUser(
+  actor: Principal,
+  input: {
+    name?: string;
+    theme?: "light" | "dark";
+    activeWorkspaceId?: string | null;
+  },
+) {
+  if (input.activeWorkspaceId) {
+    const member = await Membership.exists({
+      workspaceId: input.activeWorkspaceId,
+      userId: actor.userId,
+    });
+    if (!member)
+      throw new HttpError(404, "WORKSPACE_NOT_FOUND", "Workspace not found.");
+  }
+  const user = await User.findOneAndUpdate(
+    { _id: actor.userId, deletedAt: null },
+    { $set: input },
+    { new: true },
+  ).lean();
+  if (!user) throw new HttpError(404, "USER_NOT_FOUND", "Account not found.");
+  return {
+    name: user.name,
+    theme: user.theme,
+    activeWorkspaceId: user.activeWorkspaceId,
+  };
 }
 
 export async function listWorkspaces(actor: Principal) {
-  const members = await Membership.find({ userId: actor.userId })
+  const memberships = await Membership.find({ userId: actor.userId })
     .sort({ createdAt: 1, _id: 1 })
+    .limit(100)
     .lean();
   const workspaces = await Workspace.find({
-    _id: { $in: members.map((member) => member.workspaceId) },
+    _id: { $in: memberships.map((membership) => membership.workspaceId) },
   }).lean();
   const byId = new Map(
     workspaces.map((workspace) => [String(workspace._id), workspace]),
   );
-  return members.map((member) => ({
-    role: member.role,
-    workspace: serialize(byId.get(String(member.workspaceId))),
+  return memberships.map((membership) => ({
+    role: membership.role,
+    workspace: serialize(
+      byId.get(membership.workspaceId) as unknown as Record<string, unknown>,
+    ),
   }));
 }
 
@@ -94,1163 +275,1037 @@ export async function createWorkspace(
   actor: Principal,
   name: string,
   requestId: string,
-  key: string,
+  key?: string,
 ) {
-  return atomic(async () => {
-    const user = await getDb()
-      .collection("users")
-      .findOneAndUpdate(
-        { _id: actor.userId as never },
-        { $inc: { workspaceWriteRevision: 1 } },
-        nativeOptions(),
-      );
-    if (!user) throw new HttpError(401, "UNAUTHENTICATED", "Sign in again.");
-    const fingerprint = digest({ action: "workspace.create", name });
-    const previous = await UserOperation.findOne({
-      userId: actor.userId,
-      key,
-    }).lean();
-    if (previous) {
-      if (previous.fingerprint !== fingerprint)
-        throw new HttpError(
-          409,
-          "IDEMPOTENCY_CONFLICT",
-          "This key was used for another request.",
-        );
-      return previous.response;
-    }
-    const entitlement = await userEntitlements(actor.userId);
-    if (
-      (await Membership.countDocuments({
-        userId: actor.userId,
-        role: "OWNER",
-      })) >= entitlement.workspaces
-    )
-      throw new HttpError(
-        422,
-        "CONFLICT",
-        `${entitlement.name} allows ${entitlement.workspaces} owned workspace${entitlement.workspaces === 1 ? "" : "s"}. Manage membership in Billing.`,
-      );
-    const workspace = await Workspace.create({
-      _id: randomUUID(),
-      name,
-      currency: region.currency,
-      ownerId: actor.userId,
-    });
-    await Membership.create({
-      _id: randomUUID(),
-      workspaceId: workspace._id,
-      userId: actor.userId,
-      role: "OWNER",
-    });
-    await AuditEvent.create({
-      _id: randomUUID(),
-      workspaceId: workspace._id,
-      actorId: actor.userId,
-      action: "workspace.created",
-      requestId,
-    });
-    const response = serialize(workspace.toObject());
-    await UserOperation.create({
-      userId: actor.userId,
-      key,
-      fingerprint,
-      response,
-      expiresAt: new Date(Date.now() + 30 * 86_400_000),
-    });
-    return response;
-  });
+  return idempotent(
+    "workspace.create",
+    actor.userId,
+    key,
+    { name },
+    async () => {
+      const session = await mongoose.startSession();
+      try {
+        let result: { id: string; name: string; currency: string } | undefined;
+        await session.withTransaction(async () => {
+          const createdRows = await Workspace.create(
+            [{ name: name.trim(), ownerId: actor.userId, currency: "INR" }],
+            { session },
+          );
+          const workspace = createdRows[0];
+          if (!workspace)
+            throw new HttpError(
+              500,
+              "WORKSPACE_CREATE_FAILED",
+              "Workspace could not be created.",
+            );
+          await Membership.create(
+            [
+              {
+                workspaceId: String(workspace._id),
+                userId: actor.userId,
+                role: "OWNER",
+              },
+            ],
+            { session },
+          );
+          await User.updateOne(
+            { _id: actor.userId },
+            { $set: { activeWorkspaceId: String(workspace._id) } },
+            { session },
+          );
+          await AuditEvent.create(
+            [
+              {
+                actorId: actor.userId,
+                action: "workspace.created",
+                requestId,
+                workspaceId: String(workspace._id),
+              },
+            ],
+            { session },
+          );
+          result = {
+            id: String(workspace._id),
+            name: workspace.name,
+            currency: workspace.currency,
+          };
+        });
+        if (!result)
+          throw new HttpError(
+            500,
+            "WORKSPACE_CREATE_FAILED",
+            "Workspace could not be created.",
+          );
+        return result;
+      } finally {
+        await session.endSession();
+      }
+    },
+  );
 }
 
 async function assertAccount(workspaceId: string, accountId: string) {
-  const account = await FinancialAccount.findOne({
-    _id: accountId,
-    workspaceId,
-  }).lean();
+  const account = await Account.findOne({ _id: accountId, workspaceId }).lean();
   if (!account)
     throw new HttpError(
       404,
-      "NOT_FOUND",
+      "ACCOUNT_NOT_FOUND",
       "Account not found in this workspace.",
     );
   return account;
 }
 
-export async function executeCommand(
-  actor: Principal,
-  workspaceId: string,
-  key: string,
-  command: FinanceCommand,
-  requestId: string,
-) {
-  return workspaceWrite(actor, workspaceId, "write", async () => {
-    const workspace = await Workspace.findById(workspaceId).lean();
-    if (!workspace)
-      throw new HttpError(404, "NOT_FOUND", "Workspace not found.");
-    if (workspace.currency !== region.currency)
-      throw new HttpError(
-        409,
-        "LEGACY_CURRENCY_READ_ONLY",
-        "This legacy currency ledger is read-only. Export it and create an INR workspace; amounts have not been converted.",
-      );
-    const fingerprint = digest(command);
-    const previous = await IdempotencyKey.findOne({ workspaceId, key }).lean();
-    if (previous) {
-      if (
-        previous.actorId !== actor.userId ||
-        previous.fingerprint !== fingerprint
-      )
-        throw new HttpError(
-          409,
-          "IDEMPOTENCY_CONFLICT",
-          "This idempotency key was used for a different request.",
-        );
-      return previous.response;
-    }
-    let result: any;
-    let resourceId: string | undefined;
-    if (!["transaction.delete", "budget.delete"].includes(command.action))
-      await assertPlanWrite(workspaceId, actor.userId);
-    switch (command.action) {
-      case "account.create": {
-        if ((await FinancialAccount.countDocuments({ workspaceId })) >= 100)
-          throw new HttpError(
-            422,
-            "CONFLICT",
-            "You can track up to 100 accounts in this workspace.",
-          );
-        const account = await FinancialAccount.create({
-          _id: randomUUID(),
-          workspaceId,
-          ...command.data,
-        });
-        result = serialize(account.toObject());
-        resourceId = account.id;
-        break;
-      }
-      case "account.reminder": {
-        await assertAccount(workspaceId, command.id);
-        const account = await FinancialAccount.findOneAndUpdate(
-          { _id: command.id, workspaceId },
-          { dueDate: command.dueDate },
-          { new: true },
-        ).lean();
-        result = serialize(account);
-        resourceId = command.id;
-        break;
-      }
-      case "transaction.create": {
-        await assertAccount(workspaceId, command.data.accountId);
-        await reserveTransactions(workspaceId, 1);
-        if ((await Transaction.countDocuments({ workspaceId })) >= 10_000)
-          throw new HttpError(
-            422,
-            "CONFLICT",
-            "This workspace has reached its transaction limit.",
-          );
-        const entry = await Transaction.create({
-          _id: randomUUID(),
-          workspaceId,
-          ...command.data,
-        });
-        result = serialize(entry.toObject());
-        resourceId = entry.id;
-        break;
-      }
-      case "transaction.update": {
-        await assertAccount(workspaceId, command.data.accountId);
-        const entry = await Transaction.findOneAndUpdate(
-          { _id: command.id, workspaceId, version: command.version },
-          { ...command.data, $inc: { version: 1 }, importKey: null },
-          { new: true },
-        ).lean();
-        if (!entry)
-          throw new HttpError(
-            409,
-            "STALE_VERSION",
-            "This record changed or was removed. Refresh before trying again.",
-          );
-        result = serialize(entry);
-        resourceId = command.id;
-        break;
-      }
-      case "transaction.delete": {
-        const entry = await Transaction.findOneAndDelete({
-          _id: command.id,
-          workspaceId,
-          version: command.version,
-        });
-        if (!entry)
-          throw new HttpError(
-            409,
-            "STALE_VERSION",
-            "This record changed or was removed. Refresh before trying again.",
-          );
-        result = { deleted: true };
-        resourceId = command.id;
-        break;
-      }
-      case "transaction.import": {
-        for (const accountId of new Set(
-          command.rows.map((row) => row.accountId),
-        ))
-          await assertAccount(workspaceId, accountId);
-        const dates = command.rows.map((row) => row.date).sort();
-        const existing = await Transaction.find({
-          workspaceId,
-          accountId: {
-            $in: [...new Set(command.rows.map((row) => row.accountId))],
-          },
-          date: { $gte: dates[0], $lte: dates.at(-1)! },
-        }).lean();
-        const seen = new Set(
-          existing.map((row) => importFingerprint(row as never)),
-        );
-        const rows = command.rows.filter((row) => {
-          const fingerprint = importFingerprint(row);
-          if (seen.has(fingerprint)) return false;
-          seen.add(fingerprint);
-          return true;
-        });
-        if (
-          (await Transaction.countDocuments({ workspaceId })) + rows.length >
-          10_000
-        )
-          throw new HttpError(
-            422,
-            "ENTRY_LIMIT",
-            "This release supports up to 10,000 transactions per workspace.",
-          );
-        if (rows.length) await reserveTransactions(workspaceId, rows.length);
-        if (rows.length)
-          await Transaction.insertMany(
-            rows.map((row) => ({
-              _id: randomUUID(),
-              workspaceId,
-              ...row,
-              importKey: digest(importFingerprint(row)),
-            })),
-          );
-        result = {
-          imported: rows.length,
-          duplicates: command.rows.length - rows.length,
-        };
-        break;
-      }
-      case "budget.set": {
-        if (
-          await Budget.exists({
-            workspaceId,
-            category: command.data.category,
-            month: command.data.month,
-          })
-        )
-          throw new HttpError(
-            409,
-            "CONFLICT",
-            "A budget for this category already exists this month.",
-          );
-        if ((await Budget.countDocuments({ workspaceId })) >= 500)
-          throw new HttpError(
-            422,
-            "LIMIT",
-            "This workspace supports up to 500 category budgets.",
-          );
-        const budget = await Budget.findOneAndUpdate(
-          {
-            workspaceId,
-            category: command.data.category,
-            month: command.data.month,
-          },
-          {
-            $set: { limit: command.data.limit },
-            $setOnInsert: {
-              _id: randomUUID(),
-              workspaceId,
-              category: command.data.category,
-              month: command.data.month,
-            },
-          },
-          { upsert: true, new: true, runValidators: true },
-        ).lean();
-        result = serialize(budget);
-        resourceId = String(budget?._id);
-        break;
-      }
-      case "budget.delete": {
-        const deleted = await Budget.findOneAndDelete({
-          _id: command.id,
-          workspaceId,
-        });
-        if (!deleted)
-          throw new HttpError(404, "NOT_FOUND", "Budget not found.");
-        result = { deleted: true };
-        resourceId = command.id;
-        break;
-      }
-      case "budget.update": {
-        const duplicate = await Budget.exists({
-          workspaceId,
-          _id: { $ne: command.id },
-          category: command.data.category,
-          month: command.data.month,
-        });
-        if (duplicate)
-          throw new HttpError(
-            409,
-            "CONFLICT",
-            "This category already has a budget this month.",
-          );
-        const budget = await Budget.findOneAndUpdate(
-          { _id: command.id, workspaceId },
-          { $set: command.data },
-          { new: true, runValidators: true },
-        ).lean();
-        if (!budget) throw new HttpError(404, "NOT_FOUND", "Budget not found.");
-        result = serialize(budget);
-        resourceId = command.id;
-        break;
-      }
-      case "goal.create": {
-        if ((await Goal.countDocuments({ workspaceId })) >= 100)
-          throw new HttpError(
-            422,
-            "CONFLICT",
-            "You can track up to 100 goals in this workspace.",
-          );
-        const goal = await Goal.create({
-          _id: randomUUID(),
-          workspaceId,
-          ...command.data,
-          saved: 0,
-        });
-        result = serialize(goal.toObject());
-        resourceId = goal.id;
-        break;
-      }
-      case "goal.contribute": {
-        const goal = await Goal.findOne({
-          _id: command.id,
-          workspaceId,
-        }).lean();
-        if (!goal) throw new HttpError(404, "NOT_FOUND", "Goal not found.");
-        if (goal.saved + command.amount > goal.target)
-          throw new HttpError(
-            422,
-            "CONFLICT",
-            "Contribution exceeds the amount remaining.",
-          );
-        const updated = await Goal.findOneAndUpdate(
-          { _id: command.id, workspaceId },
-          { $inc: { saved: command.amount } },
-          { new: true },
-        ).lean();
-        result = serialize(updated);
-        resourceId = command.id;
-        break;
-      }
-    }
-    await AuditEvent.create({
-      _id: randomUUID(),
-      workspaceId,
-      actorId: actor.userId,
-      action: command.action,
-      resourceId,
-      requestId,
-    });
-    await IdempotencyKey.create({
-      _id: randomUUID(),
-      workspaceId,
-      key,
-      actorId: actor.userId,
-      fingerprint,
-      response: result,
-      expiresAt: new Date(Date.now() + 30 * 86_400_000),
-    });
-    return result;
-  });
-}
-
-export async function overview(actor: Principal, workspaceId: string) {
-  const member = await authorize(actor, workspaceId);
-  const workspace = await Workspace.findById(workspaceId).lean();
-  if (!workspace) throw new HttpError(404, "NOT_FOUND", "Workspace not found.");
-  const [accounts, transactions, budgets, goals, members] = await Promise.all([
-    FinancialAccount.find({ workspaceId })
-      .sort({ createdAt: 1, _id: 1 })
-      .lean(),
-    Transaction.find({ workspaceId }).lean(),
-    Budget.find({ workspaceId, month: localDate().slice(0, 7) }).lean(),
-    Goal.find({ workspaceId }).sort({ due: 1 }).lean(),
-    Membership.find({ workspaceId }).sort({ createdAt: 1, _id: 1 }).lean(),
-  ]);
-  const balances = accounts.map((account) => ({
-    ...serialize(account),
-    balance:
-      account.openingBalance +
-      transactions
-        .filter((entry) => entry.accountId === account._id)
-        .reduce(
-          (sum, entry) =>
-            sum + (entry.type === "income" ? entry.amount : -entry.amount),
-          0,
-        ),
-  }));
+export async function overview(workspaceId: string) {
   const month = localDate().slice(0, 7);
-  const monthRows = transactions.filter((entry) =>
-    entry.date.startsWith(month),
-  );
-  const income = monthRows
-    .filter((entry) => entry.type === "income")
-    .reduce((sum, entry) => sum + entry.amount, 0);
-  const expenses = monthRows
-    .filter((entry) => entry.type === "expense")
-    .reduce((sum, entry) => sum + entry.amount, 0);
-  const fy = financialYear();
-  const fyTotals = periodTotals(
-    transactions.map((entry) => ({
-      date: entry.date,
-      type: entry.type,
-      amount: entry.amount,
-    })),
-    fy.start,
-    fy.end,
-  );
-  const users = await getDb()
-    .collection("users")
-    .find(
-      { _id: { $in: members.map((entry) => entry.userId) as never[] } },
-      { projection: { name: 1, email: 1 } },
-    )
-    .toArray();
-  const usersById = new Map(users.map((user) => [String(user._id), user]));
-  return {
-    workspace: serialize(workspace),
-    role: member.role,
-    accounts: balances,
-    income,
-    expenses,
-    balance: balances.reduce((sum, account) => sum + account.balance, 0),
-    budgets: budgets.map((budget) => ({
-      ...serialize(budget),
-      spent: monthRows
-        .filter(
-          (entry) =>
-            entry.type === "expense" && entry.category === budget.category,
-        )
-        .reduce((sum, entry) => sum + entry.amount, 0),
-    })),
-    goals: goals.map(serialize),
-    members: members.map((entry) => ({
-      userId: entry.userId,
-      role: entry.role,
-      user: {
-        name: String(usersById.get(entry.userId)?.name ?? "Member"),
-        email: String(usersById.get(entry.userId)?.email ?? ""),
+  const [
+    workspace,
+    accounts,
+    budgets,
+    goals,
+    recent,
+    monthly,
+    balanceGroups,
+    monthSpending,
+  ] = await Promise.all([
+    Workspace.findById(workspaceId).lean(),
+    Account.find({ workspaceId })
+      .sort({ createdAt: 1, _id: 1 })
+      .limit(100)
+      .lean(),
+    Budget.find({ workspaceId, month: localDate().slice(0, 7) })
+      .sort({ category: 1 })
+      .limit(100)
+      .lean(),
+    Goal.find({ workspaceId }).sort({ due: 1, _id: 1 }).limit(100).lean(),
+    Transaction.find({ workspaceId })
+      .sort({ date: -1, _id: -1 })
+      .limit(8)
+      .lean(),
+    Transaction.aggregate([
+      { $match: { workspaceId } },
+      {
+        $group: {
+          _id: { month: { $substr: ["$date", 0, 7] }, type: "$type" },
+          total: { $sum: "$amount" },
+        },
       },
+      { $sort: { "_id.month": 1 } },
+      { $limit: 24 },
+    ]),
+    Transaction.aggregate([
+      { $match: { workspaceId } },
+      {
+        $group: {
+          _id: "$accountId",
+          income: {
+            $sum: { $cond: [{ $eq: ["$type", "income"] }, "$amount", 0] },
+          },
+          expense: {
+            $sum: { $cond: [{ $eq: ["$type", "expense"] }, "$amount", 0] },
+          },
+        },
+      },
+    ]),
+    Transaction.aggregate([
+      {
+        $match: { workspaceId, type: "expense", date: { $regex: `^${month}` } },
+      },
+      { $group: { _id: "$category", spent: { $sum: "$amount" } } },
+    ]),
+  ]);
+  if (!workspace)
+    throw new HttpError(404, "WORKSPACE_NOT_FOUND", "Workspace not found.");
+  const balanceByAccount = new Map(
+    balanceGroups.map(
+      (group: { _id: string; income: number; expense: number }) => [
+        group._id,
+        group.income - group.expense,
+      ],
+    ),
+  );
+  const normalizedAccounts = accounts.map((account) => ({
+    ...serialize(account as unknown as Record<string, unknown>),
+    balance:
+      account.openingBalance + (balanceByAccount.get(String(account._id)) ?? 0),
+  })) as unknown as AccountContract[];
+  const totals = monthly.filter(
+    (row: { _id: { month: string } }) => row._id.month === month,
+  );
+  const income = totals
+    .filter((row: { _id: { type: string } }) => row._id.type === "income")
+    .reduce((sum: number, row: { total: number }) => sum + row.total, 0);
+  const expenses = totals
+    .filter((row: { _id: { type: string } }) => row._id.type === "expense")
+    .reduce((sum: number, row: { total: number }) => sum + row.total, 0);
+  const normalizedTransactions = recent.map((row) =>
+    serialize(row as unknown as Record<string, unknown>),
+  ) as unknown as TransactionContract[];
+  const spendByCategory = new Map(
+    monthSpending.map((row: { _id: string; spent: number }) => [
+      row._id,
+      row.spent,
+    ]),
+  );
+  const budgetRows = budgets.map((budget) => ({
+    id: String(budget._id),
+    category: budget.category,
+    month: budget.month,
+    limit: budget.limit,
+    spent: spendByCategory.get(budget.category) ?? 0,
+  }));
+  const saved = income - expenses;
+  const savingRate = income ? Math.round((saved / income) * 100) : 0;
+  const score = Math.max(
+    0,
+    Math.min(
+      100,
+      40 +
+        Math.min(35, Math.max(-30, savingRate)) +
+        (budgetRows.length ? 15 : 0) -
+        budgetRows.filter((budget) => budget.spent > budget.limit).length * 8 +
+        (income > 0 ? 10 : 0),
+    ),
+  );
+  return {
+    workspace: {
+      id: String(workspace._id),
+      name: workspace.name,
+      currency: workspace.currency,
+    },
+    accounts: normalizedAccounts,
+    budgets: budgetRows,
+    goals: goals.map((goal) => ({
+      id: String(goal._id),
+      name: goal.name,
+      target: goal.target,
+      saved: goal.saved,
+      due: goal.due,
     })),
-    history: transactions.map(serialize),
-    financialYear: { ...fy, ...fyTotals },
+    recent: normalizedTransactions,
+    totals: {
+      income,
+      expenses,
+      saved,
+      savingRate,
+      score,
+      remaining: budgetRows.reduce(
+        (sum, budget) => sum + budget.limit - budget.spent,
+        0,
+      ),
+      balance: normalizedAccounts.reduce(
+        (sum, account) => sum + account.balance,
+        0,
+      ),
+    },
+    trend: monthly.map(
+      (row: { _id: { month: string; type: string }; total: number }) => ({
+        month: row._id.month,
+        type: row._id.type,
+        total: row.total,
+      }),
+    ),
   };
 }
 
-export async function entries(
-  actor: Principal,
+function decodeCursor(cursor: string | undefined) {
+  if (!cursor) return undefined;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8"),
+    ) as { date: string; id: string };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed.date) || !parsed.id)
+      throw new Error();
+    return parsed;
+  } catch {
+    throw new HttpError(422, "INVALID_CURSOR", "That page cursor is invalid.");
+  }
+}
+
+export async function listTransactions(
   workspaceId: string,
-  options: {
-    limit: number;
-    search: string;
-    category?: string;
-    cursor?: string;
-  },
+  input: { limit: number; cursor?: string; category?: string; search?: string },
 ) {
-  await authorize(actor, workspaceId);
   const filter: Record<string, unknown> = { workspaceId };
-  if (options.category) filter.category = options.category;
-  if (options.search)
+  if (input.category && categories.includes(input.category as never))
+    filter.category = input.category;
+  if (input.search)
     filter.merchant = {
-      $regex: options.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+      $regex: input.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
       $options: "i",
     };
-  if (options.cursor) {
-    const decoded = JSON.parse(
-      Buffer.from(options.cursor, "base64url").toString("utf8"),
-    ) as { date: string; id: string };
+  const cursor = decodeCursor(input.cursor);
+  if (cursor)
     filter.$or = [
-      { date: { $lt: decoded.date } },
-      { date: decoded.date, _id: { $lt: decoded.id } },
+      { date: { $lt: cursor.date } },
+      { date: cursor.date, _id: { $lt: cursor.id } },
     ];
-  }
   const rows = await Transaction.find(filter)
     .sort({ date: -1, _id: -1 })
-    .limit(options.limit + 1)
+    .limit(Math.min(100, input.limit) + 1)
     .lean();
-  const hasMore = rows.length > options.limit;
-  const data = rows.slice(0, options.limit);
-  const last = data.at(-1);
+  const hasMore = rows.length > input.limit;
+  const items = rows
+    .slice(0, input.limit)
+    .map((row) => serialize(row as unknown as Record<string, unknown>));
+  const last = rows[input.limit - 1];
   return {
-    items: data.map(serialize),
+    items,
     nextCursor:
       hasMore && last
         ? Buffer.from(
-            JSON.stringify({ date: last.date, id: last._id }),
+            JSON.stringify({ date: last.date, id: String(last._id) }),
           ).toString("base64url")
         : null,
   };
 }
 
-export async function inviteMember(
-  actor: Principal,
+export async function createTransaction(
   workspaceId: string,
-  email: string,
-  role: "ADMIN" | "EDITOR" | "VIEWER",
+  actor: Principal,
+  input: unknown,
   requestId: string,
-  key: string,
+  key?: string,
 ) {
-  return workspaceWrite(actor, workspaceId, "members", async () => {
-    const member = await authorize(actor, workspaceId, "members");
-    const fingerprint = digest({ action: "member.invite", email, role });
-    const previous = await IdempotencyKey.findOne({ workspaceId, key }).lean();
-    if (previous) {
-      if (
-        previous.actorId !== actor.userId ||
-        previous.fingerprint !== fingerprint
-      )
+  const data = transactionInput.parse(input);
+  return idempotent(
+    `transaction.create:${workspaceId}`,
+    actor.userId,
+    key,
+    data,
+    async () => {
+      await assertAccount(workspaceId, data.accountId);
+      const count = await Transaction.countDocuments({ workspaceId });
+      if (count >= 100_000)
         throw new HttpError(
-          409,
-          "IDEMPOTENCY_CONFLICT",
-          "This key was used for another request.",
+          422,
+          "TRANSACTION_LIMIT",
+          "This workspace has reached its supported transaction limit.",
         );
-      return previous.response;
-    }
-    if (role === "ADMIN" && member.role !== "OWNER")
-      throw new HttpError(
-        403,
-        "FORBIDDEN",
-        "Only an owner can invite an administrator.",
+      const row = await Transaction.create({ workspaceId, ...data });
+      await audit(
+        actor.userId,
+        "transaction.created",
+        requestId,
+        workspaceId,
+        String(row._id),
       );
-    const entitlement = await workspaceEntitlements(workspaceId);
-    const pending = await Invitation.countDocuments({
-      workspaceId,
-      acceptedAt: null,
-      expiresAt: { $gt: new Date() },
-      email: { $ne: email },
-    });
-    if (
-      (await Membership.countDocuments({ workspaceId })) + pending >=
-      entitlement.members
-    )
-      throw new HttpError(
-        422,
-        "CONFLICT",
-        `${entitlement.name} allows ${entitlement.members} workspace member${entitlement.members === 1 ? "" : "s"}, including the owner and pending invitations. Manage membership in Billing.`,
-      );
-    const existing = await getDb()
-      .collection("users")
-      .findOne({ email }, nativeOptions());
-    if (
-      existing &&
-      (await Membership.exists({ workspaceId, userId: String(existing._id) }))
-    )
-      throw new HttpError(409, "CONFLICT", "This person is already a member.");
-    const token = randomBytes(32).toString("base64url");
-    await Invitation.deleteMany({ workspaceId, email, acceptedAt: null });
-    const invitation = await Invitation.create({
-      _id: randomUUID(),
-      workspaceId,
-      email,
-      role,
-      inviterId: actor.userId,
-      tokenHash: digest(token),
-      expiresAt: new Date(Date.now() + 3 * 86_400_000),
-    });
-    await AuditEvent.create({
-      _id: randomUUID(),
-      workspaceId,
-      actorId: actor.userId,
-      action: "member.invited",
-      resourceId: invitation.id,
-      requestId,
-    });
-    const workspace = await Workspace.findOne({ _id: workspaceId }).lean();
-    await queueEmail(
-      email,
-      "You are invited to a FinSight workspace",
-      `${actor.name} invited you to ${workspace?.name} as ${role.toLowerCase()}.\n\nSign in with ${email}, then open:\n${loadConfig().WEB_ORIGIN}/invitations?token=${token}\n\nThis invitation expires in 3 days.`,
-      workspaceId,
-    );
-    const result = {
-      id: invitation.id,
-      email,
-      role,
-      expiresAt: invitation.expiresAt,
-    };
-    await IdempotencyKey.create({
-      workspaceId,
-      key,
-      actorId: actor.userId,
-      fingerprint,
-      response: result,
-      expiresAt: new Date(Date.now() + 30 * 86_400_000),
-    });
-    return result;
-  });
+      return serialize(row.toObject() as unknown as Record<string, unknown>);
+    },
+  );
 }
 
-export async function acceptInvitation(
+export async function updateTransaction(
+  workspaceId: string,
+  actor: Principal,
+  id: string,
+  version: number,
+  input: unknown,
+  requestId: string,
+) {
+  const data = transactionInput.parse(input);
+  await assertAccount(workspaceId, data.accountId);
+  const row = await Transaction.findOneAndUpdate(
+    { _id: id, workspaceId, version },
+    { $set: data, $inc: { version: 1 } },
+    { new: true, runValidators: true },
+  ).lean();
+  if (!row)
+    throw new HttpError(
+      409,
+      "STALE_VERSION",
+      "This transaction changed. Refresh before saving again.",
+    );
+  await audit(actor.userId, "transaction.updated", requestId, workspaceId, id);
+  return serialize(row as unknown as Record<string, unknown>);
+}
+
+export async function deleteTransaction(
+  workspaceId: string,
+  actor: Principal,
+  id: string,
+  version: number,
+  requestId: string,
+) {
+  const deleted = await Transaction.findOneAndDelete({
+    _id: id,
+    workspaceId,
+    version,
+  });
+  if (!deleted)
+    throw new HttpError(
+      409,
+      "STALE_VERSION",
+      "This transaction changed. Refresh before deleting again.",
+    );
+  await audit(actor.userId, "transaction.deleted", requestId, workspaceId, id);
+  return { deleted: true };
+}
+
+export async function listAccounts(workspaceId: string) {
+  const accounts = await Account.find({ workspaceId })
+    .sort({ createdAt: 1, _id: 1 })
+    .limit(100)
+    .lean();
+  const balances = await Transaction.aggregate([
+    { $match: { workspaceId } },
+    {
+      $group: {
+        _id: "$accountId",
+        income: {
+          $sum: { $cond: [{ $eq: ["$type", "income"] }, "$amount", 0] },
+        },
+        expense: {
+          $sum: { $cond: [{ $eq: ["$type", "expense"] }, "$amount", 0] },
+        },
+      },
+    },
+  ]);
+  const byId = new Map(
+    balances.map((row: { _id: string; income: number; expense: number }) => [
+      row._id,
+      row.income - row.expense,
+    ]),
+  );
+  return accounts.map((account) => ({
+    id: String(account._id),
+    name: account.name,
+    type: account.type,
+    openingBalance: account.openingBalance,
+    balance: account.openingBalance + (byId.get(String(account._id)) ?? 0),
+  }));
+}
+
+export async function createAccount(
+  workspaceId: string,
+  actor: Principal,
+  input: unknown,
+  requestId: string,
+  key?: string,
+) {
+  const data = accountInput.parse(input);
+  return idempotent(
+    `account.create:${workspaceId}`,
+    actor.userId,
+    key,
+    data,
+    async () => {
+      if ((await Account.countDocuments({ workspaceId })) >= 100)
+        throw new HttpError(
+          422,
+          "ACCOUNT_LIMIT",
+          "This workspace supports up to 100 accounts.",
+        );
+      const row = await Account.create({ workspaceId, ...data });
+      await audit(
+        actor.userId,
+        "account.created",
+        requestId,
+        workspaceId,
+        String(row._id),
+      );
+      return { id: String(row._id), ...data, balance: data.openingBalance };
+    },
+  );
+}
+
+export async function deleteAccount(
+  workspaceId: string,
+  actor: Principal,
+  id: string,
+  requestId: string,
+) {
+  if (await Transaction.exists({ workspaceId, accountId: id }))
+    throw new HttpError(
+      409,
+      "ACCOUNT_HAS_TRANSACTIONS",
+      "Move or delete its transactions before removing this account.",
+    );
+  const result = await Account.deleteOne({ _id: id, workspaceId });
+  if (!result.deletedCount)
+    throw new HttpError(404, "ACCOUNT_NOT_FOUND", "Account not found.");
+  await audit(actor.userId, "account.deleted", requestId, workspaceId, id);
+  return { deleted: true };
+}
+
+export async function listBudgets(workspaceId: string) {
+  const month = localDate().slice(0, 7);
+  const [budgets, spending] = await Promise.all([
+    Budget.find({ workspaceId })
+      .sort({ month: -1, category: 1 })
+      .limit(500)
+      .lean(),
+    Transaction.aggregate([
+      {
+        $match: { workspaceId, type: "expense", date: { $regex: `^${month}` } },
+      },
+      { $group: { _id: "$category", spent: { $sum: "$amount" } } },
+    ]),
+  ]);
+  const spent = new Map(
+    spending.map((row: { _id: string; spent: number }) => [row._id, row.spent]),
+  );
+  return budgets.map((budget) => ({
+    id: String(budget._id),
+    category: budget.category,
+    month: budget.month,
+    limit: budget.limit,
+    spent: spent.get(budget.category) ?? 0,
+  }));
+}
+
+export async function saveBudget(
+  workspaceId: string,
+  actor: Principal,
+  input: unknown,
+  requestId: string,
+  key?: string,
+) {
+  const data = budgetInput.parse(input);
+  return idempotent(
+    `budget.save:${workspaceId}`,
+    actor.userId,
+    key,
+    data,
+    async () => {
+      const row = await Budget.findOneAndUpdate(
+        { workspaceId, category: data.category, month: data.month },
+        { $set: data, $setOnInsert: { workspaceId } },
+        { new: true, upsert: true, runValidators: true },
+      ).lean();
+      await audit(
+        actor.userId,
+        "budget.saved",
+        requestId,
+        workspaceId,
+        String(row?._id),
+      );
+      return { id: String(row?._id), ...data, spent: 0 };
+    },
+  );
+}
+
+export async function deleteBudget(
+  workspaceId: string,
+  actor: Principal,
+  id: string,
+  requestId: string,
+) {
+  const result = await Budget.deleteOne({ _id: id, workspaceId });
+  if (!result.deletedCount)
+    throw new HttpError(404, "BUDGET_NOT_FOUND", "Budget not found.");
+  await audit(actor.userId, "budget.deleted", requestId, workspaceId, id);
+  return { deleted: true };
+}
+
+export async function listGoals(workspaceId: string) {
+  return (
+    await Goal.find({ workspaceId }).sort({ due: 1, _id: 1 }).limit(100).lean()
+  ).map((goal) => ({
+    id: String(goal._id),
+    name: goal.name,
+    target: goal.target,
+    saved: goal.saved,
+    due: goal.due,
+  }));
+}
+
+export async function createGoal(
+  workspaceId: string,
+  actor: Principal,
+  input: unknown,
+  requestId: string,
+  key?: string,
+) {
+  const data = goalInput.parse(input);
+  return idempotent(
+    `goal.create:${workspaceId}`,
+    actor.userId,
+    key,
+    data,
+    async () => {
+      if ((await Goal.countDocuments({ workspaceId })) >= 100)
+        throw new HttpError(
+          422,
+          "GOAL_LIMIT",
+          "This workspace supports up to 100 goals.",
+        );
+      const goal = await Goal.create({ workspaceId, ...data, saved: 0 });
+      await audit(
+        actor.userId,
+        "goal.created",
+        requestId,
+        workspaceId,
+        String(goal._id),
+      );
+      return { id: String(goal._id), ...data, saved: 0 };
+    },
+  );
+}
+
+export async function contributeGoal(
+  workspaceId: string,
+  actor: Principal,
+  id: string,
+  amount: number,
+  requestId: string,
+  key?: string,
+) {
+  return idempotent(
+    `goal.contribute:${workspaceId}:${id}`,
+    actor.userId,
+    key,
+    { amount },
+    async () => {
+      if (!Number.isSafeInteger(amount) || amount <= 0)
+        throw new HttpError(
+          422,
+          "INVALID_AMOUNT",
+          "Enter a positive whole paise amount.",
+        );
+      const goal = await Goal.findOneAndUpdate(
+        {
+          _id: id,
+          workspaceId,
+          $expr: { $lte: [{ $add: ["$saved", amount] }, "$target"] },
+        },
+        { $inc: { saved: amount } },
+        { new: true },
+      ).lean();
+      if (!goal)
+        throw new HttpError(
+          422,
+          "GOAL_LIMIT",
+          "That contribution is more than the amount remaining.",
+        );
+      await audit(actor.userId, "goal.contributed", requestId, workspaceId, id);
+      return {
+        id: String(goal._id),
+        name: goal.name,
+        target: goal.target,
+        saved: goal.saved,
+        due: goal.due,
+      };
+    },
+  );
+}
+
+export async function listRecurring(workspaceId: string) {
+  return (
+    await RecurringRule.find({ workspaceId })
+      .sort({ nextDate: 1, _id: 1 })
+      .limit(100)
+      .lean()
+  ).map((row) => ({
+    id: String(row._id),
+    accountId: row.accountId,
+    merchant: row.merchant,
+    amount: row.amount,
+    type: row.type,
+    category: row.category,
+    frequency: row.frequency,
+    nextDate: row.nextDate,
+    enabled: row.enabled,
+  }));
+}
+
+export async function createRecurring(
+  workspaceId: string,
+  actor: Principal,
+  input: unknown,
+  requestId: string,
+  key?: string,
+) {
+  const data = recurrenceInput.parse(input);
+  await assertAccount(workspaceId, data.accountId);
+  return idempotent(
+    `recurring.create:${workspaceId}`,
+    actor.userId,
+    key,
+    data,
+    async () => {
+      const row = await RecurringRule.create({ workspaceId, ...data });
+      await audit(
+        actor.userId,
+        "recurring.created",
+        requestId,
+        workspaceId,
+        String(row._id),
+      );
+      return { id: String(row._id), ...data, enabled: true };
+    },
+  );
+}
+
+export async function recordRecurring(
+  workspaceId: string,
+  actor: Principal,
+  id: string,
+  requestId: string,
+  key?: string,
+) {
+  return idempotent(
+    `recurring.record:${workspaceId}:${id}`,
+    actor.userId,
+    key,
+    {},
+    async () => {
+      const session = await mongoose.startSession();
+      try {
+        let result: unknown;
+        await session.withTransaction(async () => {
+          const rule = await RecurringRule.findOne({
+            _id: id,
+            workspaceId,
+            enabled: true,
+          })
+            .session(session)
+            .lean();
+          if (!rule)
+            throw new HttpError(
+              404,
+              "RECURRING_NOT_FOUND",
+              "Recurring rule is disabled or missing.",
+            );
+          const transactionRows = await Transaction.create(
+            [
+              {
+                workspaceId,
+                accountId: rule.accountId,
+                merchant: rule.merchant,
+                amount: rule.amount,
+                type: rule.type,
+                category: rule.category,
+                date: rule.nextDate,
+                note: "Recorded from recurring rule",
+              },
+            ],
+            { session },
+          );
+          const transaction = transactionRows[0];
+          if (!transaction)
+            throw new HttpError(
+              500,
+              "TRANSACTION_CREATE_FAILED",
+              "Recurring transaction could not be recorded.",
+            );
+          const date = new Date(`${rule.nextDate}T12:00:00.000Z`);
+          if (rule.frequency === "monthly")
+            date.setUTCMonth(date.getUTCMonth() + 1);
+          else date.setUTCFullYear(date.getUTCFullYear() + 1);
+          const nextDate = date.toISOString().slice(0, 10);
+          await RecurringRule.updateOne(
+            { _id: id, workspaceId },
+            { $set: { nextDate } },
+            { session },
+          );
+          await AuditEvent.create(
+            [
+              {
+                actorId: actor.userId,
+                action: "recurring.recorded",
+                requestId,
+                workspaceId,
+                resourceId: id,
+              },
+            ],
+            { session },
+          );
+          result = { transactionId: String(transaction._id), nextDate };
+        });
+        return result;
+      } finally {
+        await session.endSession();
+      }
+    },
+  );
+}
+
+export async function workspaceInsights(workspaceId: string) {
+  const [accounts, transactions, budgets] = await Promise.all([
+    listAccounts(workspaceId),
+    Transaction.find({ workspaceId })
+      .sort({ date: -1, _id: -1 })
+      .limit(10_000)
+      .lean(),
+    Budget.find({ workspaceId }).limit(500).lean(),
+  ]);
+  const normalized = transactions.map((row) =>
+    serialize(row as unknown as Record<string, unknown>),
+  ) as unknown as TransactionContract[];
+  const summary = summarize(
+    accounts as AccountContract[],
+    normalized,
+    budgets.map((row) => ({
+      id: String(row._id),
+      category: row.category,
+      month: row.month,
+      limit: row.limit,
+      spent: 0,
+    })) as never[],
+  );
+  const categoriesSummary = await Transaction.aggregate([
+    { $match: { workspaceId, type: "expense" } },
+    { $group: { _id: "$category", total: { $sum: "$amount" } } },
+    { $sort: { total: -1 } },
+    { $limit: 12 },
+  ]);
+  return {
+    summary,
+    cashFlow: cashFlow(normalized, 6),
+    categories: categoriesSummary.map(
+      (row: { _id: string; total: number }) => ({
+        category: row._id,
+        total: row.total,
+      }),
+    ),
+  };
+}
+
+export async function exportWorkspace(
+  workspaceId: string,
+  actor: Principal,
+  requestId: string,
+) {
+  const [workspace, accounts, transactions, budgets, goals, recurring] =
+    await Promise.all([
+      Workspace.findById(workspaceId).lean(),
+      Account.find({ workspaceId }).limit(100).lean(),
+      Transaction.find({ workspaceId })
+        .sort({ date: 1, _id: 1 })
+        .limit(100_000)
+        .lean(),
+      Budget.find({ workspaceId }).limit(500).lean(),
+      Goal.find({ workspaceId }).limit(100).lean(),
+      RecurringRule.find({ workspaceId }).limit(100).lean(),
+    ]);
+  if (!workspace)
+    throw new HttpError(404, "WORKSPACE_NOT_FOUND", "Workspace not found.");
+  await audit(actor.userId, "workspace.exported", requestId, workspaceId);
+  return {
+    format: "finsight-workspace-v1",
+    exportedAt: new Date().toISOString(),
+    money: { currency: "INR", encoding: "integer-minor-units", scale: 100 },
+    truncated: transactions.length >= 100_000,
+    workspace: { id: String(workspace._id), name: workspace.name },
+    accounts: accounts.map((row) =>
+      serialize(row as unknown as Record<string, unknown>),
+    ),
+    transactions: transactions.map((row) =>
+      serialize(row as unknown as Record<string, unknown>),
+    ),
+    budgets: budgets.map((row) =>
+      serialize(row as unknown as Record<string, unknown>),
+    ),
+    goals: goals.map((row) =>
+      serialize(row as unknown as Record<string, unknown>),
+    ),
+    recurring: recurring.map((row) =>
+      serialize(row as unknown as Record<string, unknown>),
+    ),
+  };
+}
+
+export async function deleteWorkspace(
+  workspaceId: string,
+  actor: Principal,
+  confirmation: string,
+  requestId: string,
+) {
+  const workspace = await Workspace.findOne({
+    _id: workspaceId,
+    ownerId: actor.userId,
+  }).lean();
+  if (!workspace)
+    throw new HttpError(404, "WORKSPACE_NOT_FOUND", "Workspace not found.");
+  if (confirmation !== `DELETE ${workspace.name}`)
+    throw new HttpError(
+      422,
+      "CONFIRMATION_REQUIRED",
+      "Type DELETE followed by the exact workspace name.",
+    );
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      await Promise.all([
+        Account.deleteMany({ workspaceId }, { session }),
+        Transaction.deleteMany({ workspaceId }, { session }),
+        Budget.deleteMany({ workspaceId }, { session }),
+        Goal.deleteMany({ workspaceId }, { session }),
+        RecurringRule.deleteMany({ workspaceId }, { session }),
+        Invitation.deleteMany({ workspaceId }, { session }),
+        Membership.deleteMany({ workspaceId }, { session }),
+        AuditEvent.create(
+          [
+            {
+              actorId: actor.userId,
+              action: "workspace.deleted",
+              requestId,
+              workspaceId,
+            },
+          ],
+          { session },
+        ),
+      ]);
+      await Workspace.deleteOne({ _id: workspaceId }, { session });
+      await User.updateMany(
+        { activeWorkspaceId: workspaceId },
+        { $set: { activeWorkspaceId: null } },
+        { session },
+      );
+    });
+  } finally {
+    await session.endSession();
+  }
+  return { deleted: true };
+}
+
+export async function exportUser(actor: Principal, requestId: string) {
+  const [user, memberships, workspaces] = await Promise.all([
+    User.findById(actor.userId).lean(),
+    Membership.find({ userId: actor.userId }).limit(100).lean(),
+    listWorkspaces(actor),
+  ]);
+  if (!user) throw new HttpError(404, "USER_NOT_FOUND", "Account not found.");
+  await audit(actor.userId, "account.exported", requestId);
+  return {
+    format: "finsight-personal-data-v1",
+    exportedAt: new Date().toISOString(),
+    profile: {
+      id: String(user._id),
+      name: user.name,
+      email: decryptField(user.emailCiphertext),
+      privacyAcceptedAt: user.privacyAcceptedAt,
+    },
+    memberships,
+    workspaces,
+  };
+}
+
+export async function deleteUser(
+  actor: Principal,
+  confirmation: string,
+  requestId: string,
+) {
+  if (confirmation !== "DELETE MY ACCOUNT")
+    throw new HttpError(
+      422,
+      "CONFIRMATION_REQUIRED",
+      "Type DELETE MY ACCOUNT to continue.",
+    );
+  const owned = await Membership.exists({
+    userId: actor.userId,
+    role: "OWNER",
+  });
+  if (owned)
+    throw new HttpError(
+      409,
+      "OWNED_WORKSPACES",
+      "Delete or transfer owned workspaces before deleting your account.",
+    );
+  await Membership.deleteMany({ userId: actor.userId });
+  await Invitation.deleteMany({ emailHash: digest(actor.email) });
+  await User.findByIdAndUpdate(actor.userId, {
+    $set: {
+      deletedAt: new Date(),
+      emailCiphertext: encryptField(`deleted-${randomUUID()}@invalid.local`),
+      name: "Deleted account",
+      passwordHash: await hashPassword(randomUUID()),
+    },
+  });
+  await audit(actor.userId, "account.deleted", requestId);
+  return { deleted: true };
+}
+
+export async function listMembers(workspaceId: string) {
+  const rows = await Membership.find({ workspaceId })
+    .sort({ createdAt: 1, _id: 1 })
+    .limit(100)
+    .lean();
+  const users = await User.find({
+    _id: { $in: rows.map((row) => row.userId) },
+  }).lean();
+  const byId = new Map(users.map((user) => [String(user._id), user]));
+  return rows.map((row) => ({
+    userId: row.userId,
+    role: row.role,
+    name: byId.get(row.userId)?.name ?? "Member",
+    email: byId.get(row.userId)
+      ? decryptField(byId.get(row.userId)!.emailCiphertext)
+      : "",
+  }));
+}
+
+export async function inviteMember(
+  workspaceId: string,
+  actor: Principal,
+  input: { email: string; role: "EDITOR" | "VIEWER" },
+  requestId: string,
+  key?: string,
+) {
+  const email = input.email.trim().toLowerCase();
+  return idempotent(
+    `member.invite:${workspaceId}`,
+    actor.userId,
+    key,
+    { email, role: input.role },
+    async () => {
+      const token = newOpaqueToken();
+      const invite = await Invitation.findOneAndUpdate(
+        { workspaceId, emailHash: digest(email), acceptedAt: null },
+        {
+          $set: {
+            emailCiphertext: encryptField(email),
+            role: input.role,
+            tokenHash: digest(token),
+            expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+          },
+          $setOnInsert: { workspaceId, emailHash: digest(email) },
+        },
+        { upsert: true, new: true },
+      ).lean();
+      await audit(
+        actor.userId,
+        "member.invited",
+        requestId,
+        workspaceId,
+        String(invite?._id),
+      );
+      return {
+        id: String(invite?._id),
+        email,
+        role: input.role,
+        inviteToken: token,
+        expiresAt: invite?.expiresAt,
+      };
+    },
+  );
+}
+
+export async function acceptInvite(
   actor: Principal,
   token: string,
   requestId: string,
 ) {
-  return atomic(async () => {
-    const invitation = await Invitation.findOne({
-      tokenHash: digest(token),
-      acceptedAt: null,
-      expiresAt: { $gt: new Date() },
-    });
-    if (!invitation || invitation.email !== actor.email.toLowerCase())
-      throw new HttpError(
-        404,
-        "NOT_FOUND",
-        "Invitation is invalid, expired, already used, or belongs to another email.",
-      );
-    const workspace = await Workspace.findOneAndUpdate(
-      { _id: invitation.workspaceId },
-      { $inc: { revision: 1 } },
-    ).lean();
-    if (!workspace)
-      throw new HttpError(404, "NOT_FOUND", "Workspace not found.");
-    const inviter = await Membership.findOne({
-      workspaceId: invitation.workspaceId,
-      userId: invitation.inviterId,
-    }).lean();
-    if (
-      !inviter ||
-      !["OWNER", "ADMIN"].includes(inviter.role) ||
-      (invitation.role === "ADMIN" && inviter.role !== "OWNER")
-    )
-      throw new HttpError(
-        404,
-        "INVITATION_REVOKED",
-        "The invitation is no longer authorized.",
-      );
-    const accepted = await Invitation.findOneAndUpdate(
-      { _id: invitation.id, acceptedAt: null, expiresAt: { $gt: new Date() } },
-      { acceptedAt: new Date() },
-      { new: true },
-    );
-    if (!accepted)
-      throw new HttpError(
-        409,
-        "CONFLICT",
-        "This invitation has already been used.",
-      );
-    const entitlement = await workspaceEntitlements(invitation.workspaceId);
-    if (
-      (await Membership.countDocuments({
-        workspaceId: invitation.workspaceId,
-      })) >= entitlement.members
-    )
-      throw new HttpError(
-        422,
-        "CONFLICT",
-        "This workspace has reached its member limit.",
-      );
-    await Membership.updateOne(
-      { workspaceId: invitation.workspaceId, userId: actor.userId },
-      { $setOnInsert: { _id: randomUUID(), role: invitation.role } },
-      { upsert: true },
-    );
-    await AuditEvent.create({
-      _id: randomUUID(),
-      workspaceId: invitation.workspaceId,
-      actorId: actor.userId,
-      action: "member.joined",
-      requestId,
-    });
-    return { workspaceId: invitation.workspaceId };
+  const invite = await Invitation.findOne({
+    tokenHash: digest(token),
+    acceptedAt: null,
+    expiresAt: { $gt: new Date() },
   });
-}
-
-export async function removeMember(
-  actor: Principal,
-  workspaceId: string,
-  userId: string,
-  requestId: string,
-) {
-  return workspaceWrite(actor, workspaceId, "members", async () => {
-    const caller = await authorize(actor, workspaceId, "members");
-    const target = await Membership.findOne({ workspaceId, userId }).lean();
-    if (!target) throw new HttpError(404, "NOT_FOUND", "Member not found.");
-    if (
-      target.role === "OWNER" ||
-      (target.role === "ADMIN" && caller.role !== "OWNER")
-    )
-      throw new HttpError(
-        403,
-        "FORBIDDEN",
-        "Only the owner can remove an administrator. Owners cannot be removed.",
-      );
-    await Membership.deleteOne({ workspaceId, userId });
-    await Invitation.deleteMany({
-      workspaceId,
-      inviterId: userId,
-      acceptedAt: null,
-    });
-    await AuditEvent.create({
-      _id: randomUUID(),
-      workspaceId,
-      actorId: actor.userId,
-      action: "member.removed",
-      resourceId: userId,
-      requestId,
-    });
-    return { removed: true };
-  });
-}
-
-export async function preferences(actor: Principal) {
-  const row = await UserPreferences.findOne({ userId: actor.userId }).lean();
-  return {
-    ...emptyState(actor.name.slice(0, 60)),
-    activeWorkspaceId: null,
-    ...serialize(row),
-  };
-}
-
-export async function savePreferences(
-  actor: Principal,
-  input: z.infer<typeof preferencesInput>,
-) {
-  return atomic(async () => {
-    const user = await getDb()
-      .collection("users")
-      .findOneAndUpdate(
-        { _id: actor.userId as never },
-        { $inc: { preferencesRevision: 1 } },
-        nativeOptions(),
-      );
-    if (!user) throw new HttpError(401, "UNAUTHENTICATED", "Sign in again.");
-    if (input.activeWorkspaceId)
-      await authorize(actor, input.activeWorkspaceId);
-    const old = await UserPreferences.findOne({ userId: actor.userId }).lean();
-    const values = preferencesInput.strip().parse({
-      name: actor.name.slice(0, 60),
-      theme: "light",
-      locale: "en-IN",
-      notifications: true,
-      dismissed: [],
-      onboarded: false,
-      chartMonths: 6,
-      scenarioMonths: 3,
-      activeWorkspaceId: null,
-      ...old,
-      ...input,
-    });
-    await UserPreferences.updateOne(
-      { userId: actor.userId },
-      { $set: values },
-      { upsert: true, runValidators: true },
-    );
-    if (input.name)
-      await getDb()
-        .collection("users")
-        .updateOne(
-          { _id: actor.userId as never },
-          { $set: { name: input.name } },
-          nativeOptions(),
-        );
-    return values;
-  });
-}
-
-export async function financeState(actor: Principal, workspaceId: string) {
-  return atomic(async () => {
-    const member = await authorize(actor, workspaceId);
-    const workspace = await Workspace.findById(workspaceId).lean();
-    if (!workspace)
-      throw new HttpError(404, "WORKSPACE_NOT_FOUND", "Workspace not found.");
-    const accounts = await FinancialAccount.find({ workspaceId })
-      .sort({ createdAt: 1, _id: 1 })
-      .lean();
-    const transactions = await Transaction.find({ workspaceId })
-      .sort({ date: -1, _id: -1 })
-      .lean();
-    const budgets = await Budget.find({ workspaceId })
-      .sort({ createdAt: 1, _id: 1 })
-      .lean();
-    const goals = await Goal.find({ workspaceId })
-      .sort({ createdAt: 1, _id: 1 })
-      .lean();
-    const prefs = await preferences(actor);
-    return {
-      workspace: serialize(workspace),
-      role: member.role,
-      state: stateSchema.parse({
-        ...prefs,
-        accounts: accounts.map(serialize),
-        transactions: transactions.map(serialize),
-        budgets: budgets.map(serialize),
-        goals: goals.map(serialize),
-      }),
-    };
-  });
-}
-
-export async function createRecurrence(
-  actor: Principal,
-  workspaceId: string,
-  input: z.infer<typeof recurrenceInput>,
-  requestId: string,
-  key: string,
-) {
-  return workspaceWrite(actor, workspaceId, "write", async () => {
-    const fingerprint = digest({ action: "recurring.create", input });
-    const previous = await IdempotencyKey.findOne({ workspaceId, key }).lean();
-    if (previous) {
-      if (
-        previous.actorId !== actor.userId ||
-        previous.fingerprint !== fingerprint
-      )
-        throw new HttpError(
-          409,
-          "IDEMPOTENCY_CONFLICT",
-          "This key was used for another request.",
-        );
-      return previous.response;
-    }
-    await assertAccount(workspaceId, input.transaction.accountId);
-    await assertPlanWrite(workspaceId, actor.userId);
-    await requireWorkspaceFeature(workspaceId, "recurring");
-    if ((await RecurringRule.countDocuments({ workspaceId })) >= 100)
-      throw new HttpError(
-        422,
-        "LIMIT",
-        "This workspace supports up to 100 recurring rules.",
-      );
-    const rule = await RecurringRule.create({
-      ...input,
-      workspaceId,
-      actorId: actor.userId,
-      anchorDay: Number(input.nextDue.slice(8, 10)),
-      anchorMonth: Number(input.nextDue.slice(5, 7)),
-    });
-    await AuditEvent.create({
-      workspaceId,
-      actorId: actor.userId,
-      action: "recurring.created",
-      resourceId: rule.id,
-      requestId,
-    });
-    const result = serialize(rule.toObject());
-    await IdempotencyKey.create({
-      workspaceId,
-      key,
-      actorId: actor.userId,
-      fingerprint,
-      response: result,
-      expiresAt: new Date(Date.now() + 30 * 86_400_000),
-    });
-    return result;
-  });
-}
-
-export async function runRecurrences(today = localDate()) {
-  const rules = await RecurringRule.find({
-    enabled: true,
-    nextDue: { $lte: today },
-  })
-    .sort({ nextDue: 1 })
-    .limit(100)
-    .lean();
-  for (const candidate of rules) {
-    await atomic(async () => {
-      const workspace = await Workspace.findOneAndUpdate(
-        { _id: candidate.workspaceId },
-        { $inc: { revision: 1 } },
-      ).lean();
-      const rule = await RecurringRule.findOne({
-        _id: candidate._id,
-        enabled: true,
-        nextDue: { $lte: today },
-      }).lean();
-      if (!workspace || !rule) return;
-      const creator = await Membership.findOne({
-        workspaceId: rule.workspaceId,
-        userId: rule.actorId,
-      }).lean();
-      if (
-        !creator ||
-        creator.role === "VIEWER" ||
-        (rule.endDate && rule.nextDue > rule.endDate)
-      ) {
-        await RecurringRule.updateOne({ _id: rule._id }, { enabled: false });
-        return;
-      }
-      await assertAccount(rule.workspaceId, rule.transaction.accountId);
-      if (
-        (await Transaction.countDocuments({ workspaceId: rule.workspaceId })) >=
-        10000
-      ) {
-        await RecurringRule.updateOne({ _id: rule._id }, { enabled: false });
-        return;
-      }
-      try {
-        await assertPlanWrite(rule.workspaceId, rule.actorId);
-        await requireWorkspaceFeature(rule.workspaceId, "recurring");
-        await reserveTransactions(rule.workspaceId, 1);
-      } catch (error) {
-        if (error instanceof HttpError && error.status === 403) return;
-        throw error;
-      }
-      const recurrenceKey = `${rule._id}:${rule.nextDue}`;
-      await Transaction.updateOne(
-        { workspaceId: rule.workspaceId, recurrenceKey },
-        {
-          $setOnInsert: {
-            _id: randomUUID(),
-            ...rule.transaction,
-            workspaceId: rule.workspaceId,
-            date: rule.nextDue,
-            recurrenceKey,
-            version: 1,
-          },
-        },
-        { upsert: true, runValidators: true },
-      );
-      const nextDue = nextOccurrence(
-        rule.nextDue,
-        rule.frequency as "daily" | "weekly" | "monthly" | "yearly",
-        rule.anchorDay,
-        rule.anchorMonth,
-      );
-      await RecurringRule.updateOne(
-        { _id: rule._id },
-        { nextDue, enabled: !rule.endDate || nextDue <= rule.endDate },
-      );
-      await AuditEvent.create({
-        workspaceId: rule.workspaceId,
-        actorId: rule.actorId,
-        action: "recurring.recorded",
-        resourceId: String(rule._id),
-        requestId: recurrenceKey,
-      });
-    });
-  }
-}
-
-export async function createReport(
-  actor: Principal,
-  workspaceId: string,
-  input: z.infer<typeof reportInput>,
-  requestId: string,
-) {
-  return workspaceWrite(actor, workspaceId, "read", async () => {
-    await requireWorkspaceFeature(workspaceId, "reports");
-    const transactions = await Transaction.find({
-      workspaceId,
-      date: { $gte: input.start, $lte: input.end },
-    }).lean();
-    const totals = periodTotals(transactions, input.start, input.end);
-    const token = randomBytes(32).toString("base64url");
-    const report = await SharedReport.create({
-      workspaceId,
-      actorId: actor.userId,
-      tokenHash: digest(token),
-      ...input,
-      ...totals,
-      expiresAt: new Date(Date.now() + 7 * 86_400_000),
-    });
-    await AuditEvent.create({
-      workspaceId,
-      actorId: actor.userId,
-      action: "report.shared",
-      resourceId: report.id,
-      requestId,
-    });
-    return {
-      id: report.id,
-      url: `${loadConfig().WEB_ORIGIN}/reports/${token}`,
-      expiresAt: report.expiresAt,
-      ...input,
-      ...totals,
-    };
-  });
-}
-
-export async function exportWorkspace(
-  actor: Principal,
-  workspaceId: string,
-  requestId: string,
-) {
-  return workspaceWrite(actor, workspaceId, "owner", async () => {
-    const workspace = await Workspace.findById(workspaceId).lean();
-    const accounts = await FinancialAccount.find({ workspaceId }).lean();
-    const transactions = await Transaction.find({ workspaceId }).lean();
-    const budgets = await Budget.find({ workspaceId }).lean();
-    const goals = await Goal.find({ workspaceId }).lean();
-    const recurring = await RecurringRule.find({ workspaceId }).lean();
-    await AuditEvent.create({
-      workspaceId,
-      actorId: actor.userId,
-      action: "workspace.exported",
-      requestId,
-    });
-    return {
-      format: "finsight-workspace-v1",
-      exportedAt: new Date().toISOString(),
-      money: {
-        encoding: "integer-minor-units",
-        scale: 100,
-        currency: workspace?.currency,
-        minorUnit: "paise",
-      },
-      workspace: {
-        workspace: serialize(workspace),
-        accounts: accounts.map(serialize),
-        transactions: transactions.map(serialize),
-        budgets: budgets.map(serialize),
-        goals: goals.map(serialize),
-        recurring: recurring.map(serialize),
-      },
-    };
-  });
-}
-
-export async function deleteWorkspace(
-  actor: Principal,
-  workspaceId: string,
-  confirmation: string,
-) {
-  if (!actor.fresh)
+  if (!invite || invite.emailHash !== digest(actor.email))
     throw new HttpError(
-      403,
-      "FRESH_SESSION_REQUIRED",
-      "Sign in again before deleting a workspace.",
+      404,
+      "INVITATION_NOT_FOUND",
+      "That invitation is invalid, expired, or belongs to another email.",
     );
-  return workspaceWrite(actor, workspaceId, "owner", async () => {
-    const workspace = await Workspace.findById(workspaceId).lean();
-    if (!workspace || confirmation !== `DELETE ${workspace.name}`)
-      throw new HttpError(
-        422,
-        "CONFIRMATION",
-        "Type DELETE followed by the exact workspace name.",
-      );
-    for (const name of [
-      "FinancialAccount",
-      "Transaction",
-      "Budget",
-      "Goal",
-      "AuditEvent",
-      "IdempotencyKey",
-      "Invitation",
-      "Membership",
-      "RecurringRule",
-      "SharedReport",
-      "WorkspaceUsage",
-    ])
-      await model(name).deleteMany({ workspaceId });
-    await getDb()
-      .collection("email_outbox")
-      .deleteMany({ workspaceId }, nativeOptions());
-    await UserPreferences.updateMany(
-      { activeWorkspaceId: workspaceId },
-      { activeWorkspaceId: null },
-    );
-    await Workspace.deleteOne({ _id: workspaceId });
-    return { deleted: true };
-  });
-}
-
-export async function deleteAccount(actor: Principal, confirmation: string) {
-  if (!actor.fresh)
-    throw new HttpError(
-      403,
-      "FRESH_SESSION_REQUIRED",
-      "Sign in again before deleting your account.",
-    );
-  if (confirmation !== "DELETE MY ACCOUNT")
-    throw new HttpError(
-      422,
-      "CONFIRMATION",
-      "Type DELETE MY ACCOUNT to continue.",
-    );
-  const result = await atomic(async () => {
-    const user = await getDb()
-      .collection("users")
-      .findOneAndUpdate(
-        { _id: actor.userId as never },
-        { $inc: { workspaceWriteRevision: 1 } },
-        nativeOptions(),
-      );
-    if (!user) throw new HttpError(401, "UNAUTHENTICATED", "Sign in again.");
-    const session = await getDb()
-      .collection("sessions")
-      .findOne(
-        {
-          _id: actor.sessionId as never,
-          userId: actor.userId,
-          expiresAt: { $gt: new Date() },
-        },
-        nativeOptions(),
-      );
-    if (!session) throw new HttpError(401, "SESSION_REVOKED", "Sign in again.");
-    const billing = await BillingAccount.findById(actor.userId).lean();
-    if (
-      billing?.pendingOperationId ||
-      (billing?.subscriptionId &&
-        !["cancelled", "completed", "expired"].includes(billing.status))
-    )
-      throw new HttpError(
-        409,
-        "SUBSCRIPTION_ACTIVE",
-        "Cancel your subscription and wait for cancellation to complete before deleting your account.",
-      );
-    if (
-      await Membership.countDocuments({ userId: actor.userId, role: "OWNER" })
-    )
-      throw new HttpError(
-        409,
-        "OWNED_WORKSPACES",
-        "Export and delete your owned workspaces before deleting your account.",
-      );
-    await Membership.deleteMany({ userId: actor.userId });
-    await Invitation.deleteMany({
-      $or: [{ email: actor.email.toLowerCase() }, { inviterId: actor.userId }],
-    });
-    await UserPreferences.deleteOne({ userId: actor.userId });
-    await UserOperation.deleteMany({ userId: actor.userId });
-    await BillingAccount.deleteOne({ _id: actor.userId });
-    await BillingOperation.deleteMany({ userId: actor.userId });
-    await BillingSubscription.deleteMany({ userId: actor.userId });
-    await BillingInvoice.updateMany(
-      { userId: actor.userId },
-      { userId: `deleted:${randomUUID()}` },
-    );
-    await IdempotencyKey.deleteMany({ actorId: actor.userId });
-    await SharedReport.deleteMany({ actorId: actor.userId });
-    await RecurringRule.updateMany(
-      { actorId: actor.userId },
-      { enabled: false, actorId: "deleted-user" },
-    );
-    for (const collection of ["sessions", "accounts", "twoFactors", "passkeys"])
-      await getDb()
-        .collection(collection)
-        .deleteMany({ userId: actor.userId as never }, nativeOptions());
-    await getDb()
-      .collection("email_outbox")
-      .deleteMany({ to: actor.email.toLowerCase() }, nativeOptions());
-    await getDb()
-      .collection("users")
-      .deleteOne({ _id: actor.userId as never }, nativeOptions());
-    await AuditEvent.updateMany(
-      { actorId: actor.userId },
-      { actorId: "deleted-user" },
-    );
-    return { deleted: true };
-  });
-  await redis()
-    .del(rateKey(`api:${actor.userId}`))
-    .catch(() => undefined);
-  return result;
+  await Membership.updateOne(
+    { workspaceId: invite.workspaceId, userId: actor.userId },
+    { $setOnInsert: { _id: randomUUID(), role: invite.role } },
+    { upsert: true },
+  );
+  await Invitation.updateOne(
+    { _id: invite._id, acceptedAt: null },
+    { $set: { acceptedAt: new Date() } },
+  );
+  await audit(actor.userId, "member.joined", requestId, invite.workspaceId);
+  return { workspaceId: invite.workspaceId };
 }
